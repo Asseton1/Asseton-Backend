@@ -1,0 +1,395 @@
+from datetime import datetime, time
+from decimal import Decimal, InvalidOperation
+
+from django.db.models import Q
+from django.utils import timezone
+from django.utils.dateparse import parse_date
+from rest_framework import viewsets, permissions, mixins, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
+
+from .models import (
+    Feature,
+    PropertyType,
+    Property,
+    PropertyImage,
+    State,
+    District,
+    City,
+    HeroBanner,
+    OfferBanner,
+    Contact,
+)
+from .pagination import PropertyPagination
+from .serializers import (
+    FeatureSerializer,
+    PropertyTypeSerializer,
+    PropertySerializer,
+    PropertyImageSerializer,
+    StateSerializer,
+    DistrictSerializer,
+    CitySerializer,
+    HeroBannerSerializer,
+    OfferBannerSerializer,
+    ContactSerializer,
+)
+
+class StateViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint that allows states to be viewed or edited.
+    GET methods (list and retrieve) are publicly accessible.
+    Other methods require authentication.
+    """
+    queryset = State.objects.all()
+    serializer_class = StateSerializer
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            permission_classes = []
+        else:
+            permission_classes = [permissions.IsAuthenticated]
+        return [permission() for permission in permission_classes]
+
+class DistrictViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint that allows districts to be viewed or edited.
+    """
+    queryset = District.objects.all()
+    serializer_class = DistrictSerializer
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            permission_classes = []
+        else:
+            permission_classes = [permissions.IsAuthenticated]
+        return [permission() for permission in permission_classes]
+    
+    def get_queryset(self):
+        queryset = District.objects.all()
+        state_id = self.request.query_params.get('state_id')
+        if state_id:
+            queryset = queryset.filter(state_id=state_id)
+        return queryset
+
+class CityViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint that allows cities to be viewed or edited.
+    """
+    queryset = City.objects.all()
+    serializer_class = CitySerializer
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            permission_classes = []
+        else:
+            permission_classes = [permissions.IsAuthenticated]
+        return [permission() for permission in permission_classes]
+    
+    def get_queryset(self):
+        queryset = City.objects.all()
+        district_id = self.request.query_params.get('district_id')
+        if district_id:
+            queryset = queryset.filter(district_id=district_id)
+        return queryset
+
+class FeatureViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint that allows features to be viewed or edited.
+    GET methods (list and retrieve) are publicly accessible.
+    Other methods require authentication.
+    """
+    queryset = Feature.objects.all()
+    serializer_class = FeatureSerializer
+    
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            permission_classes = []
+        else:
+            permission_classes = [permissions.IsAuthenticated]
+        return [permission() for permission in permission_classes]
+    
+    def update(self, request, *args, **kwargs):
+        # Override to prevent PUT method
+        return Response({"detail": "Method 'PUT' not allowed."}, status=405)
+    
+    def partial_update(self, request, *args, **kwargs):
+        # Use PATCH for updates
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+class PropertyTypeViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint that allows property types to be viewed or edited.
+    GET methods (list and retrieve) are publicly accessible.
+    Other methods require authentication.
+    """
+    queryset = PropertyType.objects.all()
+    serializer_class = PropertyTypeSerializer
+    
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            permission_classes = []
+        else:
+            permission_classes = [permissions.IsAuthenticated]
+        return [permission() for permission in permission_classes]
+    
+    def update(self, request, *args, **kwargs):
+        # Override to prevent PUT method
+        return Response({"detail": "Method 'PUT' not allowed."}, status=405)
+    
+    def partial_update(self, request, *args, **kwargs):
+        # Use PATCH for updates
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+class PropertyViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint that allows properties to be viewed or edited.
+    GET methods (list and retrieve) are publicly accessible.
+    Other methods require authentication.
+    """
+    queryset = Property.objects.all().select_related('state', 'district', 'city', 'property_type')
+    serializer_class = PropertySerializer
+    pagination_class = PropertyPagination
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            permission_classes = []
+        else:
+            permission_classes = [permissions.IsAuthenticated]
+        return [permission() for permission in permission_classes]
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        params = self.request.query_params
+
+        price_min = params.get('price_min')
+        price_max = params.get('price_max')
+        property_for = params.get('property_for')
+        ownership = params.get('ownership')
+        area_min = params.get('area_min')
+        area_max = params.get('area_max')
+        area_unit = params.get('area_unit', 'sqft').lower()
+        date_from = params.get('date_from')
+        date_to = params.get('date_to')
+        property_type = params.get('property_type')
+        bedrooms_min = params.get('bedrooms_min')
+        bedrooms_max = params.get('bedrooms_max')
+        bathrooms_min = params.get('bathrooms_min')
+        bathrooms_max = params.get('bathrooms_max')
+        state_id = params.get('state_id')
+        district_id = params.get('district_id')
+        city_id = params.get('city_id')
+        location = params.get('location')
+        furnishing = params.get('furnishing')
+        search = params.get('search')
+
+        def convert_decimal(value):
+            try:
+                return Decimal(value)
+            except (InvalidOperation, TypeError):
+                return None
+
+        def convert_int(value):
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+
+        price_min_decimal = convert_decimal(price_min)
+        if price_min_decimal is not None:
+            queryset = queryset.filter(price__gte=price_min_decimal)
+
+        price_max_decimal = convert_decimal(price_max)
+        if price_max_decimal is not None:
+            queryset = queryset.filter(price__lte=price_max_decimal)
+
+        if property_for in dict(Property.PROPERTY_FOR_CHOICES):
+            queryset = queryset.filter(property_for=property_for)
+
+        if ownership in dict(Property.OWNERSHIP_CHOICES):
+            queryset = queryset.filter(property_ownership=ownership)
+
+        if furnishing:
+            queryset = queryset.filter(furnishing__iexact=furnishing)
+
+        def normalize_area(value):
+            numeric_value = convert_decimal(value)
+            if numeric_value is None:
+                return None
+            if area_unit == 'cent':
+                # 1 cent = 435.6 square feet
+                return numeric_value * Decimal('435.6')
+            return numeric_value
+
+        area_min_value = normalize_area(area_min)
+        if area_min_value is not None:
+            queryset = queryset.filter(area__gte=area_min_value)
+
+        area_max_value = normalize_area(area_max)
+        if area_max_value is not None:
+            queryset = queryset.filter(area__lte=area_max_value)
+
+        if date_from:
+            parsed_date = parse_date(date_from)
+            if parsed_date:
+                start_datetime = timezone.make_aware(datetime.combine(parsed_date, time.min))
+                queryset = queryset.filter(created_at__gte=start_datetime)
+
+        if date_to:
+            parsed_date = parse_date(date_to)
+            if parsed_date:
+                end_datetime = timezone.make_aware(datetime.combine(parsed_date, time.max))
+                queryset = queryset.filter(created_at__lte=end_datetime)
+
+        property_type_id = convert_int(property_type)
+        if property_type_id is not None:
+            queryset = queryset.filter(property_type_id=property_type_id)
+
+        bedrooms_min_value = convert_int(bedrooms_min)
+        if bedrooms_min_value is not None:
+            queryset = queryset.filter(bedrooms__gte=bedrooms_min_value)
+
+        bedrooms_max_value = convert_int(bedrooms_max)
+        if bedrooms_max_value is not None:
+            queryset = queryset.filter(bedrooms__lte=bedrooms_max_value)
+
+        bathrooms_min_value = convert_int(bathrooms_min)
+        if bathrooms_min_value is not None:
+            queryset = queryset.filter(bathrooms__gte=bathrooms_min_value)
+
+        bathrooms_max_value = convert_int(bathrooms_max)
+        if bathrooms_max_value is not None:
+            queryset = queryset.filter(bathrooms__lte=bathrooms_max_value)
+
+        state_value = convert_int(state_id)
+        if state_value is not None:
+            queryset = queryset.filter(state_id=state_value)
+
+        district_value = convert_int(district_id)
+        if district_value is not None:
+            queryset = queryset.filter(district_id=district_value)
+
+        city_value = convert_int(city_id)
+        if city_value is not None:
+            queryset = queryset.filter(city_id=city_value)
+
+        if location:
+            queryset = queryset.filter(
+                Q(city__name__icontains=location)
+                | Q(district__name__icontains=location)
+                | Q(state__name__icontains=location)
+            )
+
+        if search:
+            search_terms = [term.strip() for term in search.split() if term.strip()]
+            if search_terms:
+                combined_query = Q()
+                for term in search_terms:
+                    term_query = (
+                        Q(title__icontains=term)
+                        | Q(description__icontains=term)
+                        | Q(property_type__name__icontains=term)
+                        | Q(contact_name__icontains=term)
+                        | Q(features__name__icontains=term)
+                        | Q(nearby_places__icontains=term)
+                        | Q(state__name__icontains=term)
+                        | Q(district__name__icontains=term)
+                        | Q(city__name__icontains=term)
+                        | Q(property_for__icontains=term)
+                        | Q(property_ownership__icontains=term)
+                        | Q(furnishing__icontains=term)
+                    )
+                    combined_query &= term_query if combined_query else term_query
+                queryset = queryset.filter(combined_query)
+
+        return queryset.order_by('-created_at').distinct()
+
+    @action(detail=True, methods=['delete'])
+    def delete_image(self, request, pk=None):
+        """
+        Delete a specific image from a property
+        """
+        property = self.get_object()
+        try:
+            image_id = request.data.get('image_id')
+            image = PropertyImage.objects.get(id=image_id, property=property)
+            image.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except PropertyImage.DoesNotExist:
+            return Response(
+                {"detail": "Image not found or does not belong to this property."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+class HeroBannerViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint that allows hero banners to be viewed or edited.
+    GET methods (list and retrieve) are publicly accessible.
+    Other methods require authentication.
+    """
+    queryset = HeroBanner.objects.all().order_by('-created_at')
+    serializer_class = HeroBannerSerializer
+    
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            permission_classes = []
+        else:
+            permission_classes = [permissions.IsAuthenticated]
+        return [permission() for permission in permission_classes]
+    
+    def create(self, request, *args, **kwargs):
+        # Delete all existing banners before creating new one
+        HeroBanner.objects.all().delete()
+        return super().create(request, *args, **kwargs)
+
+class OfferBannerViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint that allows offer banners to be viewed or edited.
+    GET methods (list and retrieve) are publicly accessible.
+    Other methods require authentication.
+    """
+    queryset = OfferBanner.objects.all().order_by('-created_at')
+    serializer_class = OfferBannerSerializer
+    
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            permission_classes = []
+        else:
+            permission_classes = [permissions.IsAuthenticated]
+        return [permission() for permission in permission_classes]
+    
+    def create(self, request, *args, **kwargs):
+        # Delete all existing banners before creating new one
+        OfferBanner.objects.all().delete()
+        return super().create(request, *args, **kwargs)
+
+class ContactViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint that allows contacts to be created by users and managed by admins.
+    POST: Public access - Anyone can submit a contact form
+    GET, DELETE: Admin access only
+    """
+    queryset = Contact.objects.all()
+    serializer_class = ContactSerializer
+    
+    def get_permissions(self):
+        if self.action == 'create':  # POST request
+            permission_classes = []  # No authentication needed for creating contact
+        else:  # GET and DELETE requests
+            permission_classes = [permissions.IsAdminUser]  # Only admin can list and delete
+        return [permission() for permission in permission_classes]
+    
+    def update(self, request, *args, **kwargs):
+        # Prevent PUT and PATCH methods
+        return Response({"detail": "Method not allowed."}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
+    
+    def partial_update(self, request, *args, **kwargs):
+        # Prevent PUT and PATCH methods
+        return Response({"detail": "Method not allowed."}, status=status.HTTP_405_METHOD_NOT_ALLOWED)

@@ -1,0 +1,1110 @@
+# Property Listing API Documentation
+
+## Authentication APIs
+
+### Register Admin Account
+- **URL**: `/api/accounts/register/`
+- **Method**: POST
+- **Auth Required**: No
+- **Request Body**:
+  ```json
+  {
+    "username": "admin",
+    "email": "admin@example.com",
+    "password": "StrongPassword123!",
+    "password2": "StrongPassword123!",
+    "first_name": "Admin",
+    "last_name": "User"
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 201 CREATED
+  - **Content**: 
+    ```json
+    {
+      "token": "9944b09199c62bcf9418ad846dd0e4bbdfc6ee4b",
+      "user": {
+        "id": 1,
+        "username": "admin",
+        "email": "admin@example.com",
+        "first_name": "Admin",
+        "last_name": "User"
+      }
+    }
+    ```
+- **Error Response**: 
+  - **Code**: 400 BAD REQUEST
+  - **Content**: Validation errors
+
+### Login
+- **URL**: `/api/accounts/login/`
+- **Method**: POST
+- **Auth Required**: No
+- **Request Body**:
+  ```json
+  {
+    "email": "admin@example.com",
+    "password": "StrongPassword123!"
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "token": "9944b09199c62bcf9418ad846dd0e4bbdfc6ee4b",
+      "user": {
+        "id": 1,
+        "username": "admin",
+        "email": "admin@example.com",
+        "first_name": "Admin",
+        "last_name": "User"
+      }
+    }
+    ```
+- **Error Response**: 
+  - **Code**: 400 BAD REQUEST
+  - **Content**: `{"non_field_errors": ["Invalid email or password."]}`
+
+### Logout
+- **URL**: `/api/accounts/logout/`
+- **Method**: POST
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: `{"message": "Successfully logged out."}`
+
+### Forgot Password
+- **URL**: `/api/accounts/forgot-password/`
+- **Method**: POST
+- **Auth Required**: No
+- **Request Body**:
+  ```json
+  {
+    "email": "admin@example.com"
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: `{"message": "OTP sent to your email"}`
+- **Error Response**: 
+  - **Code**: 400 BAD REQUEST
+  - **Content**: `{"email": ["No user found with this email address."]}`
+
+### Verify OTP
+- **URL**: `/api/accounts/verify-otp/`
+- **Method**: POST
+- **Auth Required**: No
+- **Request Body**:
+  ```json
+  {
+    "email": "admin@example.com",
+    "otp": "123456"
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: `{"message": "OTP verified successfully"}`
+- **Error Response**: 
+  - **Code**: 400 BAD REQUEST
+  - **Content**: `{"error": "Invalid OTP or expired"}`
+
+### Reset Password
+- **URL**: `/api/accounts/reset-password/`
+- **Method**: POST
+- **Auth Required**: No
+- **Request Body**:
+  ```json
+  {
+    "email": "admin@example.com",
+    "otp": "123456",
+    "new_password": "NewStrongPassword123!",
+    "confirm_password": "NewStrongPassword123!"
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: `{"message": "Password reset successful"}`
+- **Error Response**: 
+  - **Code**: 400 BAD REQUEST
+  - **Content**: `{"error": "Invalid OTP or expired"}` or password validation errors
+
+## Authentication
+All protected endpoints require token authentication. Include the token in the request header:
+```
+Authorization: Token 9944b09199c62bcf9418ad846dd0e4bbdfc6ee4b
+```
+
+## Property Management APIs
+
+### Features
+
+#### List All Features
+- **URL**: `/api/properties/features/`
+- **Method**: GET
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    [
+      {
+        "id": 1,
+        "name": "Swimming Pool"
+      },
+      {
+        "id": 2,
+        "name": "Garden"
+      }
+    ]
+    ```
+
+#### Get Feature Detail
+- **URL**: `/api/properties/features/{id}/`
+- **Method**: GET
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "Swimming Pool"
+    }
+    ```
+
+#### Create Feature
+- **URL**: `/api/properties/features/`
+- **Method**: POST
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**:
+  ```json
+  {
+    "name": "Swimming Pool"
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 201 CREATED
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "Swimming Pool"
+    }
+    ```
+
+#### Update Feature
+- **URL**: `/api/properties/features/{id}/`
+- **Method**: PATCH
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**:
+  ```json
+  {
+    "name": "Large Swimming Pool"
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "Large Swimming Pool"
+    }
+    ```
+
+#### Delete Feature
+- **URL**: `/api/properties/features/{id}/`
+- **Method**: DELETE
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 204 NO CONTENT
+
+### Property Types
+
+#### List All Property Types
+- **URL**: `/api/properties/property-types/`
+- **Method**: GET
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    [
+      {
+        "id": 1,
+        "name": "Apartment"
+      },
+      {
+        "id": 2,
+        "name": "House"
+      }
+    ]
+    ```
+
+#### Get Property Type Detail
+- **URL**: `/api/properties/property-types/{id}/`
+- **Method**: GET
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "Apartment"
+    }
+    ```
+
+#### Create Property Type
+- **URL**: `/api/properties/property-types/`
+- **Method**: POST
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**:
+  ```json
+  {
+    "name": "Apartment"
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 201 CREATED
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "Apartment"
+    }
+    ```
+
+#### Update Property Type
+- **URL**: `/api/properties/property-types/{id}/`
+- **Method**: PATCH
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**:
+  ```json
+  {
+    "name": "Luxury Apartment"
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "Luxury Apartment"
+    }
+    ```
+
+#### Delete Property Type
+- **URL**: `/api/properties/property-types/{id}/`
+- **Method**: DELETE
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 204 NO CONTENT
+
+### Properties
+
+#### List All Properties
+- **URL**: `/api/properties/properties/`
+- **Method**: GET
+- **Auth Required**: No
+- **Pagination**: Page-number (`page`, `page_size`, default `page_size=10`, max `100`)
+- **Query Parameters**:
+  - `property_for` &mdash; `rent` or `sell`
+  - `price_min`, `price_max` &mdash; Decimal amounts
+  - `ownership` &mdash; `management` or `direct_owner`
+  - `area_min`, `area_max` &mdash; Numeric; combine with `area_unit` (`sqft` default, `cent` converted to sqft)
+  - `date_from`, `date_to` &mdash; `YYYY-MM-DD` (applies to `created_at`)
+  - `property_type` &mdash; Property type ID
+  - `bedrooms_min`, `bedrooms_max`
+  - `bathrooms_min`, `bathrooms_max`
+  - `state_id`, `district_id`, `city_id`
+  - `location` &mdash; Text match against state/district/city names
+  - `furnishing` &mdash; Exact furnishing value (case-insensitive)
+  - `search` &mdash; Matches property title, description, feature names, or nearby places
+- **Example Requests**:
+  - `/api/properties/properties/?page=2&page_size=20&price_min=500000&price_max=2000000`
+  - `/api/properties/properties/?property_type=3&bedrooms_min=3&bathrooms_min=2&ownership=direct_owner`
+  - `/api/properties/properties/?area_min=5&area_unit=cent&location=koch`
+  - `/api/properties/properties/?property_for=rent&furnishing=furnished&search=pool`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "count": 25,
+      "next": "http://example.com/api/properties/properties/?page=2",
+      "previous": null,
+      "results": [
+        {
+          "id": 1,
+          "property_for": "rent",
+          "property_ownership": "management",
+          "contact_name": "John Doe",
+          "whatsapp_number": "+1234567890",
+          "phone_number": "+1234567890",
+          "email": "john@example.com",
+          "state": 1,
+          "state_name": "California",
+          "district": 1,
+          "district_name": "Los Angeles County",
+          "city": 1,
+          "city_name": "Los Angeles",
+          "title": "Luxury Apartment in Downtown",
+          "price": "1500.00",
+          "property_type": 1,
+          "property_type_name": "Apartment",
+          "latitude": "12.971598",
+          "longitude": "77.594562",
+          "bedrooms": 2,
+          "bathrooms": 2,
+          "area": 1200,
+          "description": "Beautiful apartment with city view",
+          "features": [1, 2],
+          "google_maps_url": "https://maps.google.com/?q=123+Main+St",
+          "youtube_video_link": "https://www.youtube.com/watch?v=example",
+          "nearby_places": "Legacy field",
+          "built_year": 2018,
+          "furnishing": "furnished",
+          "parking_spaces": 1,
+          "images": [
+            {
+              "id": 1,
+              "image": "/media/property_images/apartment1.jpg"
+            }
+          ],
+          "created_at": "2023-06-16T10:30:00Z",
+          "updated_at": "2023-06-16T10:30:00Z"
+        }
+      ]
+    }
+    ```
+
+#### Get Property Detail
+- **URL**: `/api/properties/properties/{id}/`
+- **Method**: GET
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: Same as in List All Properties for a single property
+
+#### Create Property
+- **URL**: `/api/properties/properties/`
+- **Method**: POST
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**: Multipart form data
+  ```
+  property_for: "rent"
+  property_ownership: "management"
+  contact_name: "John Doe"
+  whatsapp_number: "+1234567890"
+  phone_number: "+1234567890"
+  email: "john@example.com"
+  state: 1
+  district: 1
+  city: 1
+  address: "123 Main St, Downtown"
+  title: "Luxury Apartment in Downtown"
+  price: "1500.00"
+  property_type: 1
+  latitude: "12.971598"
+  longitude: "77.594562"
+  bedrooms: 2
+  bathrooms: 2
+  area: 1200
+  description: "Beautiful apartment with city view"
+  features: [1, 2]
+  google_maps_url: "https://maps.google.com/?q=123+Main+St"
+  youtube_video_link: "https://www.youtube.com/watch?v=example"
+  nearby_places_data: [
+    {"name": "International School", "distance": 0.5},
+    {"name": "Shopping Mall", "distance": 1.0}
+  ]
+  built_year: 2018
+  furnishing: "furnished"
+  parking_spaces: 1
+  uploaded_images: [file1, file2, ...]
+  ```
+- **Success Response**: 
+  - **Code**: 201 CREATED
+  - **Content**: Same as Get Property Detail
+
+#### Update Property
+- **URL**: `/api/properties/properties/{id}/`
+- **Method**: PATCH
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**: Multipart form data with fields to update
+  ```
+  title: "Updated Luxury Apartment in Downtown"
+  price: "1600.00"
+  nearby_places_data: [
+    {"name": "New Park", "distance": 0.3}
+  ]
+  uploaded_images: [file3, file4, ...]
+  ```
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: Updated property details
+
+#### Delete Property
+- **URL**: `/api/properties/properties/{id}/`
+- **Method**: DELETE
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 204 NO CONTENT
+
+#### Delete Property Image
+- **URL**: `/api/properties/properties/{id}/delete_image/`
+- **Method**: DELETE
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**:
+  ```json
+  {
+    "image_id": 1
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 204 NO CONTENT
+- **Error Response**: 
+  - **Code**: 404 NOT FOUND
+  - **Content**: `{"detail": "Image not found or does not belong to this property."}`
+
+#### Delete Nearby Place
+- **URL**: `/api/properties/properties/{id}/delete_nearby_place/`
+- **Method**: DELETE
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**:
+  ```json
+  {
+    "place_id": 1
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 204 NO CONTENT
+- **Error Response**: 
+  - **Code**: 404 NOT FOUND
+  - **Content**: `{"detail": "Nearby place not found or does not belong to this property."}`
+
+## Location Management APIs
+
+### States
+
+#### List All States
+- **URL**: `/api/properties/states/`
+- **Method**: GET
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    [
+      {
+        "id": 1,
+        "name": "California"
+      },
+      {
+        "id": 2,
+        "name": "New York"
+      }
+    ]
+    ```
+
+#### Get State Detail
+- **URL**: `/api/properties/states/{id}/`
+- **Method**: GET
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "California"
+    }
+    ```
+
+#### Create State
+- **URL**: `/api/properties/states/`
+- **Method**: POST
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**:
+  ```json
+  {
+    "name": "California"
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 201 CREATED
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "California"
+    }
+    ```
+
+### Districts
+
+#### List All Districts
+- **URL**: `/api/properties/districts/`
+- **Method**: GET
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Query Parameters**:
+  - `state_id`: Filter districts by state ID
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    [
+      {
+        "id": 1,
+        "name": "Los Angeles County",
+        "state": 1
+      },
+      {
+        "id": 2,
+        "name": "Orange County",
+        "state": 1
+      }
+    ]
+    ```
+
+#### Get District Detail
+- **URL**: `/api/properties/districts/{id}/`
+- **Method**: GET
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "Los Angeles County",
+      "state": 1
+    }
+    ```
+
+#### Create District
+- **URL**: `/api/properties/districts/`
+- **Method**: POST
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**:
+  ```json
+  {
+    "name": "Los Angeles County",
+    "state": 1
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 201 CREATED
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "Los Angeles County",
+      "state": 1
+    }
+    ```
+
+### Cities
+
+#### List All Cities
+- **URL**: `/api/properties/cities/`
+- **Method**: GET
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Query Parameters**:
+  - `district_id`: Filter cities by district ID
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    [
+      {
+        "id": 1,
+        "name": "Los Angeles",
+        "district": 1
+      },
+      {
+        "id": 2,
+        "name": "Beverly Hills",
+        "district": 1
+      }
+    ]
+    ```
+
+#### Get City Detail
+- **URL**: `/api/properties/cities/{id}/`
+- **Method**: GET
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "Los Angeles",
+      "district": 1
+    }
+    ```
+
+#### Create City
+- **URL**: `/api/properties/cities/`
+- **Method**: POST
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**:
+  ```json
+  {
+    "name": "Los Angeles",
+    "district": 1
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 201 CREATED
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "Los Angeles",
+      "district": 1
+    }
+    ```
+
+### Nearby Places
+
+#### List All Nearby Places
+- **URL**: `/api/properties/nearby-places/`
+- **Method**: GET
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    [
+      {
+        "id": 1,
+        "name": "International School"
+      },
+      {
+        "id": 2,
+        "name": "Shopping Mall"
+      }
+    ]
+    ```
+
+#### Get Nearby Place Detail
+- **URL**: `/api/properties/nearby-places/{id}/`
+- **Method**: GET
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "International School"
+    }
+    ```
+
+#### Create Nearby Place
+- **URL**: `/api/properties/nearby-places/`
+- **Method**: POST
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**:
+  ```json
+  {
+    "name": "International School"
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 201 CREATED
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "International School"
+    }
+    ```
+
+#### Update Nearby Place
+- **URL**: `/api/properties/nearby-places/{id}/`
+- **Method**: PATCH
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**:
+  ```json
+  {
+    "name": "New International School"
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "New International School"
+    }
+    ```
+
+#### Delete Nearby Place
+- **URL**: `/api/properties/nearby-places/{id}/`
+- **Method**: DELETE
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 204 NO CONTENT
+
+### Nearby Place Distances
+
+#### List All Nearby Place Distances
+- **URL**: `/api/properties/nearby-place-distances/`
+- **Method**: GET
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    [
+      {
+        "id": 1,
+        "property": 1,
+        "nearby_place": 1,
+        "distance": "0.5 km"
+      },
+      {
+        "id": 2,
+        "property": 1,
+        "nearby_place": 2,
+        "distance": "1 km"
+      }
+    ]
+    ```
+
+#### Get Nearby Place Distance Detail
+- **URL**: `/api/properties/nearby-place-distances/{id}/`
+- **Method**: GET
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "property": 1,
+      "nearby_place": 1,
+      "distance": "0.5 km"
+    }
+    ```
+
+#### Create Nearby Place Distance
+- **URL**: `/api/properties/nearby-place-distances/`
+- **Method**: POST
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**:
+  ```json
+  {
+    "property": 1,
+    "nearby_place": 1,
+    "distance": "0.5 km"
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 201 CREATED
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "property": 1,
+      "nearby_place": 1,
+      "distance": "0.5 km"
+    }
+    ```
+
+#### Update Nearby Place Distance
+- **URL**: `/api/properties/nearby-place-distances/{id}/`
+- **Method**: PATCH
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**:
+  ```json
+  {
+    "distance": "1 km"
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "property": 1,
+      "nearby_place": 1,
+      "distance": "1 km"
+    }
+    ```
+
+#### Delete Nearby Place Distance
+- **URL**: `/api/properties/nearby-place-distances/{id}/`
+- **Method**: DELETE
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 204 NO CONTENT
+
+## Banner Management APIs
+
+### Hero Banners
+
+#### List Hero Banners
+- **URL**: `/api/properties/hero-banners/`
+- **Method**: GET
+- **Auth Required**: No
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    [
+      {
+        "id": 1,
+        "image": "/media/banners/hero/banner1.jpg",
+        "created_at": "2024-03-20T10:30:00Z"
+      }
+    ]
+    ```
+
+#### Get Hero Banner Detail
+- **URL**: `/api/properties/hero-banners/{id}/`
+- **Method**: GET
+- **Auth Required**: No
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "image": "/media/banners/hero/banner1.jpg",
+      "created_at": "2024-03-20T10:30:00Z"
+    }
+    ```
+
+#### Create/Replace Hero Banner
+- **URL**: `/api/properties/hero-banners/`
+- **Method**: POST
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**: Multipart form data
+  ```
+  image: file
+  ```
+- **Note**: Creating a new hero banner will automatically delete any existing hero banner
+- **Success Response**: 
+  - **Code**: 201 CREATED
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "image": "/media/banners/hero/banner1.jpg",
+      "created_at": "2024-03-20T10:30:00Z"
+    }
+    ```
+
+#### Delete Hero Banner
+- **URL**: `/api/properties/hero-banners/{id}/`
+- **Method**: DELETE
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 204 NO CONTENT
+
+### Offer Banners
+
+#### List Offer Banners
+- **URL**: `/api/properties/offer-banners/`
+- **Method**: GET
+- **Auth Required**: No
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    [
+      {
+        "id": 1,
+        "image": "/media/banners/offers/banner1.jpg",
+        "created_at": "2024-03-20T10:30:00Z"
+      }
+    ]
+    ```
+
+#### Get Offer Banner Detail
+- **URL**: `/api/properties/offer-banners/{id}/`
+- **Method**: GET
+- **Auth Required**: No
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "image": "/media/banners/offers/banner1.jpg",
+      "created_at": "2024-03-20T10:30:00Z"
+    }
+    ```
+
+#### Create/Replace Offer Banner
+- **URL**: `/api/properties/offer-banners/`
+- **Method**: POST
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Request Body**: Multipart form data
+  ```
+  image: file
+  ```
+- **Note**: Creating a new offer banner will automatically delete any existing offer banner
+- **Success Response**: 
+  - **Code**: 201 CREATED
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "image": "/media/banners/offers/banner1.jpg",
+      "created_at": "2024-03-20T10:30:00Z"
+    }
+    ```
+
+#### Delete Offer Banner
+- **URL**: `/api/properties/offer-banners/{id}/`
+- **Method**: DELETE
+- **Auth Required**: Yes (Token)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 204 NO CONTENT
+
+## Contact Us API
+
+### List All Contact Messages (Admin Only)
+- **URL**: `/api/properties/contacts/`
+- **Method**: GET
+- **Auth Required**: Yes (Admin Only)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    [
+      {
+        "id": 1,
+        "name": "John Doe",
+        "email": "john@example.com",
+        "phone_number": "+1234567890",
+        "subject": "Property Inquiry",
+        "budget_range": "₹50,000 - ₹1,00,000",
+        "message": "I'm interested in the downtown apartment.",
+        "created_at": "2024-03-20T10:30:00Z"
+      }
+    ]
+    ```
+
+### Get Contact Message Detail (Admin Only)
+- **URL**: `/api/properties/contacts/{id}/`
+- **Method**: GET
+- **Auth Required**: Yes (Admin Only)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 200 OK
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "John Doe",
+      "email": "john@example.com",
+      "phone_number": "+1234567890",
+      "subject": "Property Inquiry",
+      "budget_range": "₹50,000 - ₹1,00,000",
+      "message": "I'm interested in the downtown apartment.",
+      "created_at": "2024-03-20T10:30:00Z"
+    }
+    ```
+
+### Submit Contact Form (Public)
+- **URL**: `/api/properties/contacts/`
+- **Method**: POST
+- **Auth Required**: No
+- **Request Body**:
+  ```json
+  {
+    "name": "John Doe",
+    "email": "john@example.com",
+    "phone_number": "+1234567890",
+    "subject": "Property Inquiry",
+    "budget_range": "₹50,000 - ₹1,00,000",
+    "message": "I'm interested in the downtown apartment."
+  }
+  ```
+- **Success Response**: 
+  - **Code**: 201 CREATED
+  - **Content**: 
+    ```json
+    {
+      "id": 1,
+      "name": "John Doe",
+      "email": "john@example.com",
+      "phone_number": "+1234567890",
+      "subject": "Property Inquiry",
+      "budget_range": "₹50,000 - ₹1,00,000",
+      "message": "I'm interested in the downtown apartment.",
+      "created_at": "2024-03-20T10:30:00Z"
+    }
+    ```
+- **Error Response**: 
+  - **Code**: 400 BAD REQUEST
+  - **Content**: Validation errors
+
+### Delete Contact Message (Admin Only)
+- **URL**: `/api/properties/contacts/{id}/`
+- **Method**: DELETE
+- **Auth Required**: Yes (Admin Only)
+- **Headers**: `Authorization: Token <token>`
+- **Success Response**: 
+  - **Code**: 204 NO CONTENT
+
+**Note**: The Contact Us API follows these access rules:
+- POST (submit contact form): Public access - no authentication required
+- GET (list/detail) and DELETE: Admin access only
+- PUT/PATCH (update) methods are not allowed - contact messages cannot be edited
+- The budget_range field should follow a consistent format (e.g., '₹50,000 - ₹1,00,000' or '$500 - $1000')
+
+
+
