@@ -82,7 +82,6 @@ propcache==0.3.0
 psutil==7.1.0
 pycparser==2.23
 PyJWT==2.10.1
-PyMySQL==1.1.0
 python-dateutil==2.9.0.post0
 python-decouple==3.8
 python-dotenv==1.0.1
