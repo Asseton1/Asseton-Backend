@@ -104,7 +104,7 @@ DATABASES = {
         "PORT": "3306",
         "OPTIONS": {
             "ssl": {
-                "ca": "/home/site/wwwroot/DigiCertGlobalRootCA.crt.pem"
+                "ca": "/etc/ssl/certs/ca-certificates.crt"
             }
         }
     }
