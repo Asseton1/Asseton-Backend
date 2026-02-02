@@ -35,6 +35,11 @@ ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split(",")
 
 
 CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
+CSRF_TRUSTED_ORIGINS = [
+    "https://asseton-api-bqa7a5cgffe2ghga.southindia-01.azurewebsites.net",
+    "https://www.asseton.in",
+    "https://asseton.in",
+]
 
 
 # Application definition
