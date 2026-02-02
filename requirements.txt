@@ -91,7 +91,6 @@ six==1.17.0
 sqlparse==0.5.3
 twilio==9.4.6
 typing_extensions==4.13.2
-tzdata==2024.2
 tzlocal==5.3.1
 uritemplate==4.2.0
 urllib3==2.3.0
