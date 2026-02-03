@@ -71,7 +71,7 @@ class Property(models.Model):
     
     # Property Information
     title = models.CharField(max_length=200)
-    price = models.DecimalField(max_digits=12, decimal_places=2)
+    price = models.TextField(help_text="Price can be numeric (e.g., '2500000') or text (e.g., '25 Lakh', 'Negotiable', 'Contact for price')")
     property_type = models.ForeignKey(PropertyType, on_delete=models.CASCADE, related_name='properties')
     
     # Location Coordinates
