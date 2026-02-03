@@ -202,13 +202,16 @@ class PropertyViewSet(viewsets.ModelViewSet):
             except (TypeError, ValueError):
                 return None
 
-        price_min_decimal = convert_decimal(price_min)
-        if price_min_decimal is not None:
-            queryset = queryset.filter(price__gte=price_min_decimal)
-
-        price_max_decimal = convert_decimal(price_max)
-        if price_max_decimal is not None:
-            queryset = queryset.filter(price__lte=price_max_decimal)
+        # Price filtering disabled - price is now TextField and supports text values like "25 Lakh", "Negotiable", etc.
+        # Numeric comparison filters (price_min, price_max) are not available with text-based price field
+        # If needed, price filtering can be implemented using text search or custom parsing logic
+        # price_min_decimal = convert_decimal(price_min)
+        # if price_min_decimal is not None:
+        #     queryset = queryset.filter(price__gte=price_min_decimal)
+        #
+        # price_max_decimal = convert_decimal(price_max)
+        # if price_max_decimal is not None:
+        #     queryset = queryset.filter(price__lte=price_max_decimal)
 
         if property_for in dict(Property.PROPERTY_FOR_CHOICES):
             queryset = queryset.filter(property_for=property_for)
@@ -305,6 +308,7 @@ class PropertyViewSet(viewsets.ModelViewSet):
                         | Q(property_for__icontains=term)
                         | Q(property_ownership__icontains=term)
                         | Q(furnishing__icontains=term)
+                        | Q(price__icontains=term)
                     )
                     combined_query &= term_query if combined_query else term_query
                 queryset = queryset.filter(combined_query)
