@@ -81,7 +81,12 @@ class Property(models.Model):
     # Property Details
     bedrooms = models.PositiveIntegerField()
     bathrooms = models.PositiveIntegerField()
-    area = models.PositiveIntegerField(help_text="Area in square feet")
+    AREA_UNIT_CHOICES = [
+        ('sqft', 'Square Feet'),
+        ('cent', 'Cent'),
+    ]
+    area = models.PositiveIntegerField(help_text="Area value")
+    area_unit = models.CharField(max_length=10, choices=AREA_UNIT_CHOICES, default='sqft', help_text="Unit of measurement for area")
     description = models.TextField()
     features = models.ManyToManyField(Feature, related_name='properties')
     google_maps_url = models.URLField(blank=True, null=True)
@@ -135,3 +140,33 @@ class Contact(models.Model):
 
     class Meta:
         ordering = ['-created_at']  # Most recent contacts first
+
+class SiteSettings(models.Model):
+    """
+    Singleton model for site-wide settings.
+    Only one instance should exist (pk=1).
+    """
+    filter_radius = models.DecimalField(
+        max_digits=10, 
+        decimal_places=2, 
+        default=10.0,
+        help_text="Default filter radius in kilometers for latitude/longitude-based property searches"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    @classmethod
+    def get_settings(cls):
+        """
+        Get or create the singleton SiteSettings instance.
+        Returns the single settings object (pk=1).
+        """
+        obj, created = cls.objects.get_or_create(pk=1)
+        return obj
+    
+    def __str__(self):
+        return f"Site Settings (Filter Radius: {self.filter_radius} km)"
+    
+    class Meta:
+        verbose_name = "Site Settings"
+        verbose_name_plural = "Site Settings"
