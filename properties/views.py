@@ -472,6 +472,8 @@ class SiteSettingsViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mi
     queryset = SiteSettings.objects.all()
     serializer_class = SiteSettingsSerializer
     permission_classes = [permissions.IsAdminUser]
+    lookup_field = 'pk'
+    lookup_url_kwarg = None
     
     def get_object(self):
         """
