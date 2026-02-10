@@ -17,9 +17,10 @@ router.register(r'properties', PropertyViewSet)
 router.register(r'hero-banners', HeroBannerViewSet)
 router.register(r'offer-banners', OfferBannerViewSet)
 router.register(r'contacts', ContactViewSet)
-router.register(r'site-settings', SiteSettingsViewSet, basename='site-settings')
 
 urlpatterns = [
     path('', include(router.urls)),
+    # Custom URL for singleton site-settings endpoint
+    path('site-settings/', SiteSettingsViewSet.as_view({'get': 'retrieve', 'patch': 'partial_update'}), name='site-settings'),
 ]
 
