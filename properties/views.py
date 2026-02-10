@@ -1,5 +1,6 @@
 from datetime import datetime, time
 from decimal import Decimal, InvalidOperation
+import math
 
 from django.db.models import Q
 from django.utils import timezone
@@ -189,6 +190,15 @@ class PropertyViewSet(viewsets.ModelViewSet):
         location = params.get('location')
         furnishing = params.get('furnishing')
         search = params.get('search')
+        
+        # Latitude/Longitude filtering parameters
+        latitude = params.get('latitude')
+        longitude = params.get('longitude')
+        radius = params.get('radius')  # in kilometers
+        lat_min = params.get('lat_min')
+        lat_max = params.get('lat_max')
+        lng_min = params.get('lng_min')
+        lng_max = params.get('lng_max')
 
         def convert_decimal(value):
             try:
@@ -312,6 +322,66 @@ class PropertyViewSet(viewsets.ModelViewSet):
                     )
                     combined_query &= term_query if combined_query else term_query
                 queryset = queryset.filter(combined_query)
+
+        # Latitude/Longitude filtering
+        lat_min_value = convert_decimal(lat_min)
+        lat_max_value = convert_decimal(lat_max)
+        lng_min_value = convert_decimal(lng_min)
+        lng_max_value = convert_decimal(lng_max)
+        lat_value = convert_decimal(latitude)
+        lng_value = convert_decimal(longitude)
+        radius_value = convert_decimal(radius)
+        
+        # Check if any lat/lng filtering is being applied
+        has_lat_lng_filter = any([
+            lat_min_value is not None,
+            lat_max_value is not None,
+            lng_min_value is not None,
+            lng_max_value is not None,
+            (lat_value is not None and lng_value is not None)
+        ])
+        
+        # Only filter by coordinates if lat/lng filters are being used
+        if has_lat_lng_filter:
+            # Ensure we only filter properties that have coordinates
+            queryset = queryset.filter(latitude__isnull=False, longitude__isnull=False)
+            
+            # Bounding box filtering
+            if lat_min_value is not None:
+                queryset = queryset.filter(latitude__gte=lat_min_value)
+            if lat_max_value is not None:
+                queryset = queryset.filter(latitude__lte=lat_max_value)
+            if lng_min_value is not None:
+                queryset = queryset.filter(longitude__gte=lng_min_value)
+            if lng_max_value is not None:
+                queryset = queryset.filter(longitude__lte=lng_max_value)
+            
+            # Distance-based filtering (using bounding box approximation for efficiency)
+            # This finds properties within a radius (in km) from a given point
+            if lat_value is not None and lng_value is not None and radius_value is not None:
+                # Convert radius from km to degrees (approximate)
+                # 1 degree latitude ≈ 111 km
+                # 1 degree longitude ≈ 111 km * cos(latitude)
+                lat_degree = radius_value / Decimal('111.0')
+                lng_degree = radius_value / (Decimal('111.0') * Decimal(str(abs(math.cos(math.radians(float(lat_value)))))))
+                
+                # Create bounding box
+                queryset = queryset.filter(
+                    latitude__gte=lat_value - lat_degree,
+                    latitude__lte=lat_value + lat_degree,
+                    longitude__gte=lng_value - lng_degree,
+                    longitude__lte=lng_value + lng_degree
+                )
+            elif lat_value is not None and lng_value is not None:
+                # If latitude and longitude are provided but no radius, filter to exact coordinates
+                # (or very close - within a small tolerance)
+                tolerance = Decimal('0.0001')  # approximately 11 meters
+                queryset = queryset.filter(
+                    latitude__gte=lat_value - tolerance,
+                    latitude__lte=lat_value + tolerance,
+                    longitude__gte=lng_value - tolerance,
+                    longitude__lte=lng_value + tolerance
+                )
 
         return queryset.order_by('-created_at').distinct()
 
