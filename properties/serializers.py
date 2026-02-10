@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Feature, PropertyType, Property, PropertyImage, State, District, City, HeroBanner, OfferBanner, Contact
+from .models import Feature, PropertyType, Property, PropertyImage, State, District, City, HeroBanner, OfferBanner, Contact, SiteSettings
 
 class StateSerializer(serializers.ModelSerializer):
     class Meta:
@@ -59,7 +59,7 @@ class PropertySerializer(serializers.ModelSerializer):
             'whatsapp_number', 'phone_number', 'email', 
             'location', 'state', 'district', 'city',
             'title', 'price', 'property_type', 'property_type_details', 'bedrooms', 
-            'bathrooms', 'area', 'description', 'features', 'feature_details', 'google_maps_url', 
+            'bathrooms', 'area', 'area_unit', 'description', 'features', 'feature_details', 'google_maps_url', 
             'google_embedded_map_link', 'youtube_video_link', 'latitude', 'longitude',
             'nearby_places', 'built_year', 'furnishing', 'parking_spaces', 'images', 
             'uploaded_images', 'created_at', 'updated_at'
@@ -191,6 +191,12 @@ class ContactSerializer(serializers.ModelSerializer):
         model = Contact
         fields = ['id', 'name', 'email', 'phone_number', 'subject', 'budget_range', 'message', 'created_at']
         read_only_fields = ['created_at']
+
+class SiteSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SiteSettings
+        fields = ['id', 'filter_radius', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
 
 
 
