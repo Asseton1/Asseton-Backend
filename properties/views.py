@@ -20,6 +20,7 @@ from .models import (
     HeroBanner,
     OfferBanner,
     Contact,
+    SiteSettings,
 )
 from .pagination import PropertyPagination
 from .serializers import (
@@ -33,6 +34,7 @@ from .serializers import (
     HeroBannerSerializer,
     OfferBannerSerializer,
     ContactSerializer,
+    SiteSettingsSerializer,
 )
 
 class StateViewSet(viewsets.ModelViewSet):
@@ -232,22 +234,17 @@ class PropertyViewSet(viewsets.ModelViewSet):
         if furnishing:
             queryset = queryset.filter(furnishing__iexact=furnishing)
 
-        def normalize_area(value):
-            numeric_value = convert_decimal(value)
-            if numeric_value is None:
-                return None
-            if area_unit == 'cent':
-                # 1 cent = 435.6 square feet
-                return numeric_value * Decimal('435.6')
-            return numeric_value
+        # Area filtering - filter by matching area_unit and area value (no conversion)
+        if area_unit in dict(Property.AREA_UNIT_CHOICES):
+            queryset = queryset.filter(area_unit=area_unit)
+            
+            area_min_value = convert_int(area_min)
+            if area_min_value is not None:
+                queryset = queryset.filter(area__gte=area_min_value)
 
-        area_min_value = normalize_area(area_min)
-        if area_min_value is not None:
-            queryset = queryset.filter(area__gte=area_min_value)
-
-        area_max_value = normalize_area(area_max)
-        if area_max_value is not None:
-            queryset = queryset.filter(area__lte=area_max_value)
+            area_max_value = convert_int(area_max)
+            if area_max_value is not None:
+                queryset = queryset.filter(area__lte=area_max_value)
 
         if date_from:
             parsed_date = parse_date(date_from)
@@ -358,12 +355,30 @@ class PropertyViewSet(viewsets.ModelViewSet):
             
             # Distance-based filtering (using bounding box approximation for efficiency)
             # This finds properties within a radius (in km) from a given point
+<<<<<<< HEAD
+            if lat_value is not None and lng_value is not None:
+                # Determine which radius to use: query parameter or admin-defined default
+                if radius_value is not None:
+                    # Use the radius from query parameter (override admin setting)
+                    radius_to_use = radius_value
+                else:
+                    # Use the admin-defined filter_radius from SiteSettings
+                    site_settings = SiteSettings.get_settings()
+                    radius_to_use = Decimal(str(site_settings.filter_radius))
+                
+                # Convert radius from km to degrees (approximate)
+                # 1 degree latitude ≈ 111 km
+                # 1 degree longitude ≈ 111 km * cos(latitude)
+                lat_degree = radius_to_use / Decimal('111.0')
+                lng_degree = radius_to_use / (Decimal('111.0') * Decimal(str(abs(math.cos(math.radians(float(lat_value)))))))
+=======
             if lat_value is not None and lng_value is not None and radius_value is not None:
                 # Convert radius from km to degrees (approximate)
                 # 1 degree latitude ≈ 111 km
                 # 1 degree longitude ≈ 111 km * cos(latitude)
                 lat_degree = radius_value / Decimal('111.0')
                 lng_degree = radius_value / (Decimal('111.0') * Decimal(str(abs(math.cos(math.radians(float(lat_value)))))))
+>>>>>>> 2acd700b8d10c5cbd71e21cca12ea485571da3e3
                 
                 # Create bounding box
                 queryset = queryset.filter(
@@ -372,6 +387,8 @@ class PropertyViewSet(viewsets.ModelViewSet):
                     longitude__gte=lng_value - lng_degree,
                     longitude__lte=lng_value + lng_degree
                 )
+<<<<<<< HEAD
+=======
             elif lat_value is not None and lng_value is not None:
                 # If latitude and longitude are provided but no radius, filter to exact coordinates
                 # (or very close - within a small tolerance)
@@ -382,6 +399,7 @@ class PropertyViewSet(viewsets.ModelViewSet):
                     longitude__gte=lng_value - tolerance,
                     longitude__lte=lng_value + tolerance
                 )
+>>>>>>> 2acd700b8d10c5cbd71e21cca12ea485571da3e3
 
         return queryset.order_by('-created_at').distinct()
 
@@ -467,3 +485,47 @@ class ContactViewSet(viewsets.ModelViewSet):
     def partial_update(self, request, *args, **kwargs):
         # Prevent PUT and PATCH methods
         return Response({"detail": "Method not allowed."}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
+
+class SiteSettingsViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.UpdateModelMixin):
+    """
+    API endpoint for managing site settings (singleton pattern).
+    GET and PATCH methods require admin authentication.
+    """
+    queryset = SiteSettings.objects.all()
+    serializer_class = SiteSettingsSerializer
+    permission_classes = [permissions.IsAdminUser]
+    
+    def get_object(self):
+        """
+        Always return the singleton instance (pk=1).
+        """
+        return SiteSettings.get_settings()
+    
+    def retrieve(self, request, *args, **kwargs):
+        """
+        GET /api/properties/site-settings/
+        Get the current site settings (admin only).
+        """
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+    
+    def partial_update(self, request, *args, **kwargs):
+        """
+        PATCH /api/properties/site-settings/
+        Update the site settings (admin only).
+        """
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+    
+    def update(self, request, *args, **kwargs):
+        """
+        PUT method is not allowed - use PATCH instead.
+        """
+        return Response(
+            {"detail": "Method 'PUT' not allowed. Use 'PATCH' instead."},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED
+        )
