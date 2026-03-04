@@ -1,6 +1,7 @@
 from datetime import datetime, time
 from decimal import Decimal, InvalidOperation
 import math
+from urllib.parse import urlencode
 
 from django.db.models import Q
 from django.utils import timezone
@@ -35,7 +36,9 @@ from .serializers import (
     OfferBannerSerializer,
     ContactSerializer,
     SiteSettingsSerializer,
+    PropertyLocationSerializer,
 )
+from .utils import haversine_km
 
 class StateViewSet(viewsets.ModelViewSet):
     """
@@ -162,12 +165,115 @@ class PropertyViewSet(viewsets.ModelViewSet):
     pagination_class = PropertyPagination
 
     def get_permissions(self):
-        if self.action in ['list', 'retrieve']:
-            permission_classes = []
+        if self.action in ['list', 'retrieve', 'locations']:
+            permission_classes = [permissions.AllowAny]
         else:
             permission_classes = [permissions.IsAuthenticated]
         return [permission() for permission in permission_classes]
-    
+
+    @action(detail=False, methods=['get'], url_path='locations')
+    def locations(self, request):
+        """
+        GET /api/properties/locations/
+        Returns distinct property locations (name + lat/lng) with pagination and search.
+        Same-name locations within filter_radius are merged; the first (newest) location's
+        coordinates are shown. Ordered by most recently added first.
+        Query params: page, page_size, search
+        """
+        from collections import defaultdict
+
+        site_settings = SiteSettings.get_settings()
+        filter_radius_km = float(site_settings.filter_radius)
+
+        queryset = (
+            Property.objects.filter(latitude__isnull=False, longitude__isnull=False)
+            .select_related('state', 'district', 'city')
+            .order_by('-created_at')
+        )
+
+        search = (request.query_params.get('search') or '').strip()
+        if search:
+            queryset = queryset.filter(
+                Q(state__name__icontains=search)
+                | Q(district__name__icontains=search)
+                | Q(city__name__icontains=search)
+            )
+
+        # Group by location name (state_id, district_id, city_id)
+        groups = defaultdict(list)
+        for prop in queryset:
+            key = (prop.state_id, prop.district_id, prop.city_id)
+            groups[key].append(prop)
+
+        # Cluster within each group by distance; representative = first (newest) in cluster
+        results = []
+        for key, props in groups.items():
+            # props already sorted by -created_at
+            clusters = []  # list of {"rep": property, "members": [...]}
+            for prop in props:
+                lat1 = prop.latitude
+                lon1 = prop.longitude
+                found = False
+                for cluster in clusters:
+                    rep = cluster["rep"]
+                    dist_km = haversine_km(lat1, lon1, rep.latitude, rep.longitude)
+                    if dist_km <= filter_radius_km:
+                        cluster["members"].append(prop)
+                        found = True
+                        break
+                if not found:
+                    clusters.append({"rep": prop, "members": [prop]})
+
+            for cluster in clusters:
+                rep = cluster["rep"]
+                location_name = f"{rep.city.name}, {rep.district.name}, {rep.state.name}"
+                results.append({
+                    "location_name": location_name,
+                    "latitude": rep.latitude,
+                    "longitude": rep.longitude,
+                    "state": rep.state.name,
+                    "district": rep.district.name,
+                    "city": rep.city.name,
+                    "_created_at": rep.created_at,
+                })
+
+        # Sort by representative's created_at descending (newest first)
+        results.sort(key=lambda x: x["_created_at"], reverse=True)
+        for r in results:
+            del r["_created_at"]
+
+        # Pagination
+        try:
+            page_size = int(request.query_params.get('page_size', PropertyPagination.page_size))
+        except (TypeError, ValueError):
+            page_size = PropertyPagination.page_size
+        page_size = max(1, min(page_size, PropertyPagination.max_page_size))
+        try:
+            page = max(1, int(request.query_params.get('page', 1)))
+        except (TypeError, ValueError):
+            page = 1
+        count = len(results)
+        start = (page - 1) * page_size
+        end = start + page_size
+        page_results = results[start:end]
+
+        serializer = PropertyLocationSerializer(page_results, many=True)
+        base_url = request.build_absolute_uri(request.path)
+        def pagination_url(p):
+            params = {'page': p, 'page_size': page_size}
+            if search:
+                params['search'] = search
+            return f"{base_url}?{urlencode(params)}"
+        next_url = None if end >= count else pagination_url(page + 1)
+        prev_url = None if page <= 1 else pagination_url(page - 1)
+
+        return Response({
+            "count": count,
+            "next": next_url,
+            "previous": prev_url,
+            "results": serializer.data,
+        })
+
     def get_queryset(self):
         queryset = super().get_queryset()
         params = self.request.query_params
