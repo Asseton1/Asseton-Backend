@@ -20,6 +20,8 @@ router.register(r'contacts', ContactViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),
+    # Property locations list (GET) at /api/properties/locations/
+    path('locations/', PropertyViewSet.as_view(actions={'get': 'locations'}), name='property-locations'),
     # Custom URL for singleton site-settings endpoint
     path('site-settings/', SiteSettingsViewSet.as_view({'get': 'retrieve', 'patch': 'partial_update'}), name='site-settings'),
 ]
