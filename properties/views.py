@@ -113,7 +113,7 @@ class FeatureViewSet(viewsets.ModelViewSet):
     
     def update(self, request, *args, **kwargs):
         # Override to prevent PUT method
-        return Response({"detail": "Method 'PUT' not allowed."}, status=405)
+        return Response({"detail": "Method 'PUT' not allowed."}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
     
     def partial_update(self, request, *args, **kwargs):
         # Use PATCH for updates
@@ -141,7 +141,7 @@ class PropertyTypeViewSet(viewsets.ModelViewSet):
     
     def update(self, request, *args, **kwargs):
         # Override to prevent PUT method
-        return Response({"detail": "Method 'PUT' not allowed."}, status=405)
+        return Response({"detail": "Method 'PUT' not allowed."}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
     
     def partial_update(self, request, *args, **kwargs):
         # Use PATCH for updates
@@ -178,7 +178,8 @@ class PropertyViewSet(viewsets.ModelViewSet):
         ownership = params.get('ownership')
         area_min = params.get('area_min')
         area_max = params.get('area_max')
-        area_unit = params.get('area_unit', 'sqft').lower()
+        area_unit_param = params.get('area_unit')
+        area_unit = (area_unit_param or '').strip().lower() or None
         date_from = params.get('date_from')
         date_to = params.get('date_to')
         property_type = params.get('property_type')
@@ -214,16 +215,39 @@ class PropertyViewSet(viewsets.ModelViewSet):
             except (TypeError, ValueError):
                 return None
 
-        # Price filtering disabled - price is now TextField and supports text values like "25 Lakh", "Negotiable", etc.
-        # Numeric comparison filters (price_min, price_max) are not available with text-based price field
-        # If needed, price filtering can be implemented using text search or custom parsing logic
-        # price_min_decimal = convert_decimal(price_min)
-        # if price_min_decimal is not None:
-        #     queryset = queryset.filter(price__gte=price_min_decimal)
-        #
-        # price_max_decimal = convert_decimal(price_max)
-        # if price_max_decimal is not None:
-        #     queryset = queryset.filter(price__lte=price_max_decimal)
+        # Price filtering: price is TextField and can contain non-numeric values
+        # Apply filtering in Python for rows where price is a pure numeric string
+        price_min_decimal = convert_decimal(price_min)
+        price_max_decimal = convert_decimal(price_max)
+        if price_min_decimal is not None or price_max_decimal is not None:
+            # Invalid range: min > max returns no results
+            if (
+                price_min_decimal is not None
+                and price_max_decimal is not None
+                and price_min_decimal > price_max_decimal
+            ):
+                return queryset.none()
+
+            matching_ids = []
+            for row in queryset.values("id", "price"):
+                raw_price = (row.get("price") or "").strip()
+                try:
+                    numeric_price = Decimal(raw_price)
+                except (InvalidOperation, TypeError):
+                    # Skip non-numeric prices like "75 lakh", "Negotiable", etc.
+                    continue
+
+                if price_min_decimal is not None and numeric_price < price_min_decimal:
+                    continue
+                if price_max_decimal is not None and numeric_price > price_max_decimal:
+                    continue
+
+                matching_ids.append(row["id"])
+
+            if not matching_ids:
+                return queryset.none()
+
+            queryset = queryset.filter(id__in=matching_ids)
 
         if property_for in dict(Property.PROPERTY_FOR_CHOICES):
             queryset = queryset.filter(property_for=property_for)
@@ -235,9 +259,26 @@ class PropertyViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(furnishing__iexact=furnishing)
 
         # Area filtering - filter by matching area_unit and area value (no conversion)
-        if area_unit in dict(Property.AREA_UNIT_CHOICES):
+        # Get valid area unit choices as a set for efficient lookup
+        valid_area_units = {choice[0] for choice in Property.AREA_UNIT_CHOICES}
+        
+        # Filter by area_unit if provided and valid
+        if area_unit and area_unit in valid_area_units:
             queryset = queryset.filter(area_unit=area_unit)
             
+            # Apply area_min and area_max filters only when area_unit is specified
+            # This ensures we're comparing within the same unit
+            area_min_value = convert_int(area_min)
+            if area_min_value is not None:
+                queryset = queryset.filter(area__gte=area_min_value)
+
+            area_max_value = convert_int(area_max)
+            if area_max_value is not None:
+                queryset = queryset.filter(area__lte=area_max_value)
+        elif area_min or area_max:
+            # If area_min/area_max are provided but area_unit is not, 
+            # default to 'sqft' for backward compatibility
+            queryset = queryset.filter(area_unit='sqft')
             area_min_value = convert_int(area_min)
             if area_min_value is not None:
                 queryset = queryset.filter(area__gte=area_min_value)
@@ -302,13 +343,13 @@ class PropertyViewSet(viewsets.ModelViewSet):
             if search_terms:
                 combined_query = Q()
                 for term in search_terms:
+                    # Note: nearby_places is JSONField; icontains is not supported, so it's excluded from search
                     term_query = (
                         Q(title__icontains=term)
                         | Q(description__icontains=term)
                         | Q(property_type__name__icontains=term)
                         | Q(contact_name__icontains=term)
                         | Q(features__name__icontains=term)
-                        | Q(nearby_places__icontains=term)
                         | Q(state__name__icontains=term)
                         | Q(district__name__icontains=term)
                         | Q(city__name__icontains=term)
@@ -367,9 +408,10 @@ class PropertyViewSet(viewsets.ModelViewSet):
                 
                 # Convert radius from km to degrees (approximate)
                 # 1 degree latitude ≈ 111 km
-                # 1 degree longitude ≈ 111 km * cos(latitude)
+                # 1 degree longitude ≈ 111 km * cos(latitude); avoid division by zero near poles
                 lat_degree = radius_to_use / Decimal('111.0')
-                lng_degree = radius_to_use / (Decimal('111.0') * Decimal(str(abs(math.cos(math.radians(float(lat_value)))))))
+                cos_lat = abs(math.cos(math.radians(float(lat_value))))
+                lng_degree = radius_to_use / (Decimal('111.0') * Decimal(str(cos_lat))) if cos_lat >= 1e-9 else Decimal('0')
                 
                 # Create bounding box
                 queryset = queryset.filter(
@@ -384,12 +426,32 @@ class PropertyViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['delete'])
     def delete_image(self, request, pk=None):
         """
-        Delete a specific image from a property
+        Delete a specific image from a property.
+        Pass image_id in JSON body (e.g. {"image_id": 1}) or as query param (?image_id=1).
         """
-        property = self.get_object()
+        property_obj = self.get_object()
+        # Accept image_id from body or query params (DELETE often has no body)
+        image_id = None
         try:
-            image_id = request.data.get('image_id')
-            image = PropertyImage.objects.get(id=image_id, property=property)
+            image_id = request.data.get('image_id') if request.data else None
+        except Exception:
+            pass
+        if image_id is None:
+            image_id = request.query_params.get('image_id')
+        if image_id is None:
+            return Response(
+                {"detail": "image_id is required. Pass it in the request body or as query param (e.g. ?image_id=1)."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        try:
+            image_id = int(image_id)
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "image_id must be a valid integer."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        try:
+            image = PropertyImage.objects.get(id=image_id, property=property_obj)
             image.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
         except PropertyImage.DoesNotExist:
