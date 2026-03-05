@@ -178,7 +178,7 @@ class PropertyViewSet(viewsets.ModelViewSet):
         Returns distinct property locations (name + lat/lng) with pagination and search.
         Same-name locations within filter_radius are merged; the first (newest) location's
         coordinates are shown. Ordered by most recently added first.
-        Query params: page, page_size, search
+        Query params: page, page_size, search, property_for (optional: 'rent' or 'sell')
         """
         from collections import defaultdict
 
@@ -190,6 +190,11 @@ class PropertyViewSet(viewsets.ModelViewSet):
             .select_related('state', 'district', 'city')
             .order_by('-created_at')
         )
+
+        # Filter by property type: rent or sell
+        property_for = (request.query_params.get('property_for') or '').strip().lower()
+        if property_for in dict(Property.PROPERTY_FOR_CHOICES):
+            queryset = queryset.filter(property_for=property_for)
 
         search = (request.query_params.get('search') or '').strip()
         if search:
@@ -263,6 +268,8 @@ class PropertyViewSet(viewsets.ModelViewSet):
             params = {'page': p, 'page_size': page_size}
             if search:
                 params['search'] = search
+            if property_for:
+                params['property_for'] = property_for
             return f"{base_url}?{urlencode(params)}"
         next_url = None if end >= count else pagination_url(page + 1)
         prev_url = None if page <= 1 else pagination_url(page - 1)
