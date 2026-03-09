@@ -123,6 +123,8 @@ class PropertySerializer(serializers.ModelSerializer):
         validated_data.update(location_fields)
         
         uploaded_images = validated_data.pop('uploaded_images', [])
+        if not isinstance(uploaded_images, list):
+            uploaded_images = [uploaded_images] if uploaded_images else []
         features = validated_data.pop('features', [])
         
         property_instance = Property.objects.create(**validated_data)
