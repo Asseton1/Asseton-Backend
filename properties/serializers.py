@@ -96,23 +96,31 @@ class PropertySerializer(serializers.ModelSerializer):
             if not city_name:
                 raise serializers.ValidationError({"city": "City is required"})
 
-        # Process location fields only if they are provided
+        # Process location fields only if they are provided.
+        # Use filter().first() + create to avoid MultipleObjectsReturned when duplicates exist in DB.
         if state_name:
-            state, _ = State.objects.get_or_create(name=state_name)
+            state_name = (state_name or "").strip()
+            state = State.objects.filter(name__iexact=state_name).first()
+            if not state:
+                state = State.objects.create(name=state_name)
             location_fields['state'] = state
 
             if district_name:
-                district, _ = District.objects.get_or_create(
-                    name=district_name,
-                    state=state
-                )
+                district_name = (district_name or "").strip()
+                district = District.objects.filter(
+                    name__iexact=district_name, state=state
+                ).first()
+                if not district:
+                    district = District.objects.create(name=district_name, state=state)
                 location_fields['district'] = district
 
                 if city_name:
-                    city, _ = City.objects.get_or_create(
-                        name=city_name,
-                        district=district
-                    )
+                    city_name = (city_name or "").strip()
+                    city = City.objects.filter(
+                        name__iexact=city_name, district=district
+                    ).first()
+                    if not city:
+                        city = City.objects.create(name=city_name, district=district)
                     location_fields['city'] = city
 
         return location_fields
