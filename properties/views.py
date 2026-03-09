@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, time
 from decimal import Decimal, InvalidOperation
 import math
@@ -7,7 +8,7 @@ from django.db import IntegrityError
 from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_date
-from rest_framework import viewsets, permissions, mixins, status
+from rest_framework import serializers, viewsets, permissions, mixins, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
@@ -194,18 +195,29 @@ class PropertyViewSet(viewsets.ModelViewSet):
         return out
 
     def create(self, request, *args, **kwargs):
-        data = self._normalize_create_data(request)
-        serializer = self.get_serializer(data=data)
-        serializer.is_valid(raise_exception=True)
         try:
+            data = self._normalize_create_data(request)
+            serializer = self.get_serializer(data=data)
+            serializer.is_valid(raise_exception=True)
             self.perform_create(serializer)
+            headers = self.get_success_headers(serializer.data)
+            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        except serializers.ValidationError:
+            raise  # Let DRF return 400 with validation errors
         except IntegrityError as e:
             return Response(
                 {"detail": "Invalid or duplicate data: " + str(e)},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        except Exception as e:
+            logging.exception("Property create failed")
+            return Response(
+                {
+                    "detail": str(e),
+                    "error_type": type(e).__name__,
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     @action(detail=False, methods=['get'], url_path='locations')
     def locations(self, request):
