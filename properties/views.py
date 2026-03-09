@@ -3,6 +3,7 @@ from decimal import Decimal, InvalidOperation
 import math
 from urllib.parse import urlencode
 
+from django.db import IntegrityError
 from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -170,6 +171,41 @@ class PropertyViewSet(viewsets.ModelViewSet):
         else:
             permission_classes = [permissions.IsAuthenticated]
         return [permission() for permission in permission_classes]
+
+    def _normalize_create_data(self, request):
+        """Ensure uploaded_images is always a list for multipart (single file or multiple)."""
+        data = request.data
+        if 'uploaded_images' not in data:
+            return data
+        if hasattr(data, 'getlist'):
+            files = data.getlist('uploaded_images')
+            if not files and data.get('uploaded_images'):
+                files = [data.get('uploaded_images')]
+        else:
+            files = data.get('uploaded_images')
+            if not isinstance(files, list):
+                files = [files] if files else []
+        out = {}
+        for key in data:
+            if key == 'uploaded_images':
+                out[key] = files
+            else:
+                out[key] = data.get(key)
+        return out
+
+    def create(self, request, *args, **kwargs):
+        data = self._normalize_create_data(request)
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            self.perform_create(serializer)
+        except IntegrityError as e:
+            return Response(
+                {"detail": "Invalid or duplicate data: " + str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     @action(detail=False, methods=['get'], url_path='locations')
     def locations(self, request):
