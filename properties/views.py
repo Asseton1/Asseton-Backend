@@ -460,9 +460,24 @@ class PropertyViewSet(viewsets.ModelViewSet):
                 end_datetime = timezone.make_aware(datetime.combine(parsed_date, time.max))
                 queryset = queryset.filter(created_at__lte=end_datetime)
 
-        property_type_id = convert_int(property_type)
-        if property_type_id is not None:
-            queryset = queryset.filter(property_type_id=property_type_id)
+        # Support single ID or multiple: property_type=1 or property_type=1,2,3 or property_type=1&property_type=2
+        property_type_ids = None
+        if property_type is not None:
+            # getlist handles repeated params: ?property_type=1&property_type=2
+            raw_values = self.request.query_params.getlist('property_type') or [property_type]
+            # Also support comma-separated in first value: ?property_type=1,2,3
+            parsed = []
+            for raw in raw_values:
+                for part in str(raw).split(','):
+                    part = part.strip()
+                    if part:
+                        pid = convert_int(part)
+                        if pid is not None:
+                            parsed.append(pid)
+            if parsed:
+                property_type_ids = list(dict.fromkeys(parsed))  # unique, preserve order
+        if property_type_ids is not None:
+            queryset = queryset.filter(property_type_id__in=property_type_ids)
 
         bedrooms_min_value = convert_int(bedrooms_min)
         if bedrooms_min_value is not None:
