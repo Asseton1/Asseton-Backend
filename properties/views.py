@@ -174,11 +174,11 @@ class PropertyViewSet(viewsets.ModelViewSet):
         return [permission() for permission in permission_classes]
 
     def _normalize_create_data(self, request):
-        """Ensure uploaded_images is always a list for multipart (single file or multiple)."""
+        """Ensure uploaded_images and features are lists for multipart (multiple files/IDs)."""
         data = request.data
-        if 'uploaded_images' not in data:
-            return data
-        if hasattr(data, 'getlist'):
+        has_multipart = hasattr(data, 'getlist')
+        # Normalize uploaded_images to a list
+        if has_multipart:
             files = data.getlist('uploaded_images')
             if not files and data.get('uploaded_images'):
                 files = [data.get('uploaded_images')]
@@ -186,10 +186,21 @@ class PropertyViewSet(viewsets.ModelViewSet):
             files = data.get('uploaded_images')
             if not isinstance(files, list):
                 files = [files] if files else []
+        # Normalize features to a list (FormData sends multiple "features" keys; QueryDict.get returns only the last)
+        if has_multipart:
+            features = data.getlist('features')
+        else:
+            features = data.get('features')
+            if features is None:
+                features = []
+            elif not isinstance(features, list):
+                features = [features] if features else []
         out = {}
         for key in data:
             if key == 'uploaded_images':
                 out[key] = files
+            elif key == 'features':
+                out[key] = features
             else:
                 out[key] = data.get(key)
         return out
