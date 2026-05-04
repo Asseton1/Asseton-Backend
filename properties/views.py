@@ -5,7 +5,7 @@ import math
 from urllib.parse import urlencode
 
 from django.db import IntegrityError
-from django.db.models import Q
+from django.db.models import Q, Prefetch
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from rest_framework import serializers, viewsets, permissions, mixins, status
@@ -162,7 +162,17 @@ class PropertyViewSet(viewsets.ModelViewSet):
     GET methods (list and retrieve) are publicly accessible.
     Other methods require authentication.
     """
-    queryset = Property.objects.all().select_related('state', 'district', 'city', 'property_type')
+    queryset = (
+        Property.objects.all()
+        .select_related('state', 'district', 'city', 'property_type')
+        .prefetch_related(
+            Prefetch(
+                'images',
+                queryset=PropertyImage.objects.only('id', 'image', 'property_id'),
+            ),
+            Prefetch('features', queryset=Feature.objects.only('id', 'name')),
+        )
+    )
     serializer_class = PropertySerializer
     pagination_class = PropertyPagination
 
@@ -387,12 +397,10 @@ class PropertyViewSet(viewsets.ModelViewSet):
             except (TypeError, ValueError):
                 return None
 
-        # Price filtering: price is TextField and can contain non-numeric values
-        # Apply filtering in Python for rows where price is a pure numeric string
+        # Price range: use indexed price_numeric (synced from plain-decimal price on save)
         price_min_decimal = convert_decimal(price_min)
         price_max_decimal = convert_decimal(price_max)
         if price_min_decimal is not None or price_max_decimal is not None:
-            # Invalid range: min > max returns no results
             if (
                 price_min_decimal is not None
                 and price_max_decimal is not None
@@ -400,26 +408,11 @@ class PropertyViewSet(viewsets.ModelViewSet):
             ):
                 return queryset.none()
 
-            matching_ids = []
-            for row in queryset.values("id", "price"):
-                raw_price = (row.get("price") or "").strip()
-                try:
-                    numeric_price = Decimal(raw_price)
-                except (InvalidOperation, TypeError):
-                    # Skip non-numeric prices like "75 lakh", "Negotiable", etc.
-                    continue
-
-                if price_min_decimal is not None and numeric_price < price_min_decimal:
-                    continue
-                if price_max_decimal is not None and numeric_price > price_max_decimal:
-                    continue
-
-                matching_ids.append(row["id"])
-
-            if not matching_ids:
-                return queryset.none()
-
-            queryset = queryset.filter(id__in=matching_ids)
+            queryset = queryset.exclude(price_numeric__isnull=True)
+            if price_min_decimal is not None:
+                queryset = queryset.filter(price_numeric__gte=price_min_decimal)
+            if price_max_decimal is not None:
+                queryset = queryset.filter(price_numeric__lte=price_max_decimal)
 
         if property_for in dict(Property.PROPERTY_FOR_CHOICES):
             queryset = queryset.filter(property_for=property_for)
@@ -530,13 +523,18 @@ class PropertyViewSet(viewsets.ModelViewSet):
             if search_terms:
                 combined_query = Q()
                 for term in search_terms:
+                    # Match by feature name via subquery so the main query does not JOIN M2M
+                    # (avoids row multiplication and expensive DISTINCT on large tables).
+                    feature_name_match = Property.objects.filter(
+                        features__name__icontains=term
+                    ).values('pk').distinct()
                     # Note: nearby_places is JSONField; icontains is not supported, so it's excluded from search
                     term_query = (
                         Q(title__icontains=term)
                         | Q(description__icontains=term)
                         | Q(property_type__name__icontains=term)
                         | Q(contact_name__icontains=term)
-                        | Q(features__name__icontains=term)
+                        | Q(pk__in=feature_name_match)
                         | Q(state__name__icontains=term)
                         | Q(district__name__icontains=term)
                         | Q(city__name__icontains=term)
@@ -608,7 +606,7 @@ class PropertyViewSet(viewsets.ModelViewSet):
                     longitude__lte=lng_value + lng_degree
                 )
 
-        return queryset.order_by('-created_at').distinct()
+        return queryset.order_by('-created_at')
 
     @action(detail=True, methods=['delete'])
     def delete_image(self, request, pk=None):
