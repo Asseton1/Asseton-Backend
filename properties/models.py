@@ -1,3 +1,5 @@
+from decimal import Decimal, InvalidOperation
+
 from django.db import models
 from django.core.validators import RegexValidator
 
@@ -72,6 +74,14 @@ class Property(models.Model):
     # Property Information
     title = models.CharField(max_length=200)
     price = models.TextField(help_text="Price can be numeric (e.g., '2500000') or text (e.g., '25 Lakh', 'Negotiable', 'Contact for price')")
+    price_numeric = models.DecimalField(
+        max_digits=20,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Parsed from price when it is a plain decimal string; used for fast range filters.",
+    )
     property_type = models.ForeignKey(PropertyType, on_delete=models.CASCADE, related_name='properties')
     
     # Location Coordinates
@@ -100,7 +110,23 @@ class Property(models.Model):
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['created_at'], name='property_created_at_idx'),
+        ]
+
+    def save(self, *args, **kwargs):
+        raw = (self.price or "").strip()
+        if raw:
+            try:
+                self.price_numeric = Decimal(raw)
+            except (InvalidOperation, TypeError, ValueError):
+                self.price_numeric = None
+        else:
+            self.price_numeric = None
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return self.title
         
