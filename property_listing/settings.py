@@ -31,10 +31,13 @@ DEBUG = os.getenv("DEBUG", "False") == "True"
 # SECURITY WARNING: don't run with debug turned on in production!
 
 
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split(",")
+ALLOWED_HOSTS = [
+    h.strip() for h in os.getenv("ALLOWED_HOSTS", "").split(",") if h.strip()
+]
 
-
-CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
+CORS_ALLOWED_ORIGINS = [
+    o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()
+]
 CSRF_TRUSTED_ORIGINS = [
     "https://asseton-api-bqa7a5cgffe2ghga.southindia-01.azurewebsites.net",
     "https://www.asseton.in",
@@ -114,6 +117,8 @@ DATABASES = {
         "PASSWORD": os.getenv("DB_PASSWORD"),
         "HOST": os.getenv("DB_HOST"),
         "PORT": "3306",
+        # Reuse TLS session across queries in the same request (big win vs Azure MySQL from dev machines).
+        "CONN_MAX_AGE": int(os.getenv("DB_CONN_MAX_AGE", "60")),
         "OPTIONS": {
             "ssl": {
                 "ca": "/etc/ssl/certs/ca-certificates.crt"
