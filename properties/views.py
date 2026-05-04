@@ -5,7 +5,7 @@ import math
 from urllib.parse import urlencode
 
 from django.db import IntegrityError
-from django.db.models import Q
+from django.db.models import Q, Case, When
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from rest_framework import serializers, viewsets, permissions, mixins, status
@@ -162,7 +162,7 @@ class PropertyViewSet(viewsets.ModelViewSet):
     GET methods (list and retrieve) are publicly accessible.
     Other methods require authentication.
     """
-    queryset = Property.objects.all().select_related('state', 'district', 'city', 'property_type')
+    queryset = Property.objects.all()
     serializer_class = PropertySerializer
     pagination_class = PropertyPagination
 
@@ -172,6 +172,43 @@ class PropertyViewSet(viewsets.ModelViewSet):
         else:
             permission_classes = [permissions.IsAuthenticated]
         return [permission() for permission in permission_classes]
+
+    def list(self, request, *args, **kwargs):
+        """
+        Paginate with a fast ORDER BY on `properties_property` only, then reload that page
+        with select_related + prefetch_related. A single JOIN+ORDER BY+LIMIT on Azure MySQL
+        was taking several seconds; PK lookup + joins for ~10 rows is ~0.1s.
+        """
+        queryset = self.filter_queryset(self.get_queryset())
+        queryset = queryset.prefetch_related(None)
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            pks = [obj.pk for obj in page]
+            if not pks:
+                serializer = self.get_serializer([], many=True)
+                return self.get_paginated_response(serializer.data)
+            order = Case(*[When(pk=pk, then=i) for i, pk in enumerate(pks)])
+            page_qs = (
+                Property.objects.filter(pk__in=pks)
+                .select_related('state', 'district', 'city', 'property_type')
+                .prefetch_related('images', 'features')
+                .order_by(order)
+            )
+            serializer = self.get_serializer(page_qs, many=True)
+            return self.get_paginated_response(serializer.data)
+        pks = list(queryset.values_list('pk', flat=True))
+        if not pks:
+            serializer = self.get_serializer([], many=True)
+            return Response(serializer.data)
+        order = Case(*[When(pk=pk, then=i) for i, pk in enumerate(pks)])
+        full_qs = (
+            Property.objects.filter(pk__in=pks)
+            .select_related('state', 'district', 'city', 'property_type')
+            .prefetch_related('images', 'features')
+            .order_by(order)
+        )
+        serializer = self.get_serializer(full_qs, many=True)
+        return Response(serializer.data)
 
     def _normalize_create_data(self, request):
         """Ensure uploaded_images and features are lists for multipart (multiple files/IDs)."""
@@ -342,6 +379,10 @@ class PropertyViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
+        # list: avoid select_related — combined JOIN + ORDER BY + LIMIT made Azure MySQL use a ~4s plan.
+        # Other actions still prefetch FKs in one round-trip per object.
+        if self.action != 'list':
+            queryset = queryset.select_related('state', 'district', 'city', 'property_type')
         params = self.request.query_params
 
         price_min = params.get('price_min')
@@ -365,7 +406,10 @@ class PropertyViewSet(viewsets.ModelViewSet):
         location = params.get('location')
         furnishing = params.get('furnishing')
         search = params.get('search')
-        
+        # Search OR-clauses include features (M2M); DISTINCT is required then only.
+        # Unconditional DISTINCT made every list query a heavy SELECT DISTINCT over Azure MySQL (~4s+).
+        search_needs_distinct = False
+
         # Latitude/Longitude filtering parameters
         latitude = params.get('latitude')
         longitude = params.get('longitude')
@@ -547,6 +591,7 @@ class PropertyViewSet(viewsets.ModelViewSet):
                     )
                     combined_query &= term_query if combined_query else term_query
                 queryset = queryset.filter(combined_query)
+                search_needs_distinct = True
 
         # Latitude/Longitude filtering
         lat_min_value = convert_decimal(lat_min)
@@ -608,7 +653,13 @@ class PropertyViewSet(viewsets.ModelViewSet):
                     longitude__lte=lng_value + lng_degree
                 )
 
-        return queryset.order_by('-created_at').distinct()
+        queryset = queryset.order_by('-created_at')
+        if search_needs_distinct:
+            queryset = queryset.distinct()
+        # Avoid N+1 when serializing nested images and features (critical with remote DB).
+        if self.action in ('list', 'retrieve'):
+            queryset = queryset.prefetch_related('images', 'features')
+        return queryset
 
     @action(detail=True, methods=['delete'])
     def delete_image(self, request, pk=None):
