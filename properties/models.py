@@ -53,6 +53,12 @@ class Property(models.Model):
         ('management', 'Management'),
         ('direct_owner', 'Direct Owner'),
     ]
+
+    MODERATION_STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
     
     # Basic Information
     property_for = models.CharField(max_length=10, choices=PROPERTY_FOR_CHOICES)
@@ -96,6 +102,12 @@ class Property(models.Model):
     built_year = models.PositiveIntegerField()
     furnishing = models.CharField(max_length=50)
     parking_spaces = models.PositiveIntegerField(default=0)
+    moderation_status = models.CharField(
+        max_length=20,
+        choices=MODERATION_STATUS_CHOICES,
+        default='pending',
+        db_index=True,
+    )
     
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
