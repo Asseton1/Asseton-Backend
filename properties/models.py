@@ -108,6 +108,7 @@ class Property(models.Model):
         default='pending',
         db_index=True,
     )
+    is_featured = models.BooleanField(default=False, db_index=True)
     
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
