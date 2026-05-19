@@ -281,9 +281,15 @@ class PropertyViewSet(viewsets.ModelViewSet):
         site_settings = SiteSettings.get_settings()
         filter_radius_km = float(site_settings.filter_radius)
 
+        locations_qs = Property.objects.filter(
+            latitude__isnull=False,
+            longitude__isnull=False,
+        )
+        if not (request.user.is_authenticated and request.user.is_staff):
+            locations_qs = locations_qs.filter(moderation_status='approved')
+
         queryset = (
-            Property.objects.filter(latitude__isnull=False, longitude__isnull=False)
-            .select_related('state', 'district', 'city')
+            locations_qs.select_related('state', 'district', 'city')
             .order_by('-created_at')
         )
 
@@ -383,6 +389,19 @@ class PropertyViewSet(viewsets.ModelViewSet):
         # Other actions still prefetch FKs in one round-trip per object.
         if self.action != 'list':
             queryset = queryset.select_related('state', 'district', 'city', 'property_type')
+
+        user = self.request.user
+        is_staff = user.is_authenticated and user.is_staff
+        moderation_status = self.request.query_params.get('moderation_status')
+
+        if is_staff:
+            if moderation_status in dict(Property.MODERATION_STATUS_CHOICES):
+                queryset = queryset.filter(moderation_status=moderation_status)
+        elif self.action in ('list', 'locations'):
+            queryset = queryset.filter(moderation_status='approved')
+        elif self.action == 'retrieve' and not user.is_authenticated:
+            queryset = queryset.filter(moderation_status='approved')
+
         params = self.request.query_params
 
         price_min = params.get('price_min')
