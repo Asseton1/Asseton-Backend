@@ -62,7 +62,7 @@ class PropertySerializer(serializers.ModelSerializer):
             'bathrooms', 'area', 'area_unit', 'description', 'features', 'feature_details', 'google_maps_url', 
             'google_embedded_map_link', 'youtube_video_link', 'latitude', 'longitude',
             'nearby_places', 'built_year', 'furnishing', 'parking_spaces',
-            'moderation_status', 'images',
+            'moderation_status', 'is_featured', 'images',
             'uploaded_images', 'created_at', 'updated_at'
         ]
         read_only_fields = ('created_at', 'updated_at')
@@ -77,6 +77,7 @@ class PropertySerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if not request or not getattr(request.user, 'is_staff', False):
             self.fields['moderation_status'].read_only = True
+            self.fields['is_featured'].read_only = True
 
     def get_location(self, obj):
         """Return location information in a structured format"""
