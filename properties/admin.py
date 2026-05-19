@@ -37,11 +37,11 @@ class PropertyImageInline(admin.TabularInline):
 @admin.register(Property)
 class PropertyAdmin(admin.ModelAdmin):
     list_display = (
-        'title', 'property_for', 'moderation_status', 'state', 'district', 'city',
+        'title', 'property_for', 'moderation_status', 'is_featured', 'state', 'district', 'city',
         'property_type', 'price', 'created_at',
     )
     list_filter = (
-        'moderation_status', 'property_for', 'state', 'district', 'city',
+        'moderation_status', 'is_featured', 'property_for', 'state', 'district', 'city',
         'property_type', 'bedrooms', 'bathrooms', 'furnishing',
     )
     search_fields = ('title', 'description')
