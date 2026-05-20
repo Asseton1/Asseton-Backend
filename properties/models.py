@@ -105,7 +105,7 @@ class Property(models.Model):
     moderation_status = models.CharField(
         max_length=20,
         choices=MODERATION_STATUS_CHOICES,
-        default='pending',
+        default='approved',
         db_index=True,
     )
     is_featured = models.BooleanField(default=False, db_index=True)
