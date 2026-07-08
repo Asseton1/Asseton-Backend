@@ -194,6 +194,39 @@ class PropertySerializer(serializers.ModelSerializer):
         
         return instance
 
+
+class PropertyListSerializer(serializers.ModelSerializer):
+    """
+    Slim read-only serializer for property list/cards.
+    Omits heavy unused-on-list fields while keeping keys the UI already reads.
+    """
+    images = PropertyImageSerializer(many=True, read_only=True)
+    property_type_details = PropertyTypeSerializer(source='property_type', read_only=True)
+    location = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Property
+        fields = [
+            'id', 'property_for', 'contact_name',
+            'whatsapp_number', 'phone_number', 'email',
+            'location',
+            'title', 'price', 'property_type_details', 'bedrooms',
+            'bathrooms', 'area', 'area_unit', 'description', 'google_maps_url',
+            'latitude', 'longitude',
+            'furnishing', 'parking_spaces',
+            'moderation_status', 'is_featured', 'images',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = fields
+
+    def get_location(self, obj):
+        return {
+            'state': obj.state.name if obj.state else None,
+            'district': obj.district.name if obj.district else None,
+            'city': obj.city.name if obj.city else None,
+        }
+
+
 class HeroBannerSerializer(serializers.ModelSerializer):
     class Meta:
         model = HeroBanner
