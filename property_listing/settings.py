@@ -61,7 +61,7 @@ INSTALLED_APPS = [
     'accounts',
     'rest_framework',
     'rest_framework.authtoken',
-    'properties',
+    'properties.apps.PropertiesConfig',
     'corsheaders',
     'storages'
 ]
@@ -201,6 +201,18 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+}
+
+# In-process cache for locations clustering (no Redis required).
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'asseton-locations-cache',
+        'TIMEOUT': 60,
+        'OPTIONS': {
+            'MAX_ENTRIES': 500,
+        },
+    }
 }
 
 # Email settings for password reset
