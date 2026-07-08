@@ -1,3 +1,8 @@
+from io import BytesIO
+from pathlib import Path
+
+from django.core.files.base import ContentFile
+from PIL import Image, ImageOps
 from rest_framework import serializers
 from .models import Feature, PropertyType, Property, PropertyImage, State, District, City, HeroBanner, OfferBanner, Contact, SiteSettings
 
@@ -227,12 +232,49 @@ class PropertyListSerializer(serializers.ModelSerializer):
         }
 
 
-class HeroBannerSerializer(serializers.ModelSerializer):
+class CompressedBannerSerializerMixin:
+    """
+    Compress banner images server-side before saving to storage.
+    Keeps the same API contract (`image` upload field).
+    """
+    max_dimension = 1920
+    quality = 82
+
+    def validate_image(self, image_file):
+        return self._compress_banner_image(image_file)
+
+    def _compress_banner_image(self, image_file):
+        image_file.seek(0)
+        with Image.open(image_file) as img:
+            img = ImageOps.exif_transpose(img)
+            if img.mode not in ("RGB", "RGBA"):
+                img = img.convert("RGBA" if "A" in img.getbands() else "RGB")
+
+            # Keep aspect ratio while capping banner dimensions.
+            img.thumbnail((self.max_dimension, self.max_dimension), Image.Resampling.LANCZOS)
+
+            output = BytesIO()
+            has_alpha = "A" in img.getbands()
+            if has_alpha:
+                img.save(output, format="WEBP", quality=self.quality, method=6)
+                ext = ".webp"
+            else:
+                rgb_img = img.convert("RGB")
+                rgb_img.save(output, format="JPEG", quality=self.quality, optimize=True, progressive=True)
+                ext = ".jpg"
+
+            output.seek(0)
+            original_name = Path(getattr(image_file, "name", "banner")).stem or "banner"
+            return ContentFile(output.read(), name=f"{original_name}{ext}")
+
+
+class HeroBannerSerializer(CompressedBannerSerializerMixin, serializers.ModelSerializer):
     class Meta:
         model = HeroBanner
         fields = ['id', 'image', 'created_at']
 
-class OfferBannerSerializer(serializers.ModelSerializer):
+
+class OfferBannerSerializer(CompressedBannerSerializerMixin, serializers.ModelSerializer):
     class Meta:
         model = OfferBanner
         fields = ['id', 'image', 'created_at']
