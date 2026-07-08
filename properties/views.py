@@ -203,12 +203,132 @@ class PropertyViewSet(viewsets.ModelViewSet):
             queryset=PropertyImage.objects.filter(id__in=first_image_ids).order_by('id'),
         )
 
+    def _is_admin_fast_list(self, request):
+        """Admin UI opt-in; does not change default public list behavior."""
+        mode = (request.query_params.get('search_mode') or '').strip().lower()
+        return mode in ('admin', 'lite')
+
+    def _admin_fast_list(self, request):
+        """
+        Fast admin property list/search.
+
+        Avoids JOIN+ORDER BY+COUNT that Azure MySQL turns into multi-second plans:
+        - Location/type name matches resolved via small ID lookups, then OR on FK ids
+        - Pagination uses values_list(pk) + page_size+1 (no exact COUNT(*))
+        - Response shape stays DRF-compatible: count/next/previous/results
+        """
+        params = request.query_params
+        try:
+            page_size = int(params.get('page_size', PropertyPagination.page_size))
+        except (TypeError, ValueError):
+            page_size = PropertyPagination.page_size
+        page_size = max(1, min(page_size, PropertyPagination.max_page_size))
+        try:
+            page = max(1, int(params.get('page', 1)))
+        except (TypeError, ValueError):
+            page = 1
+
+        qs = Property.objects.all()
+
+        user = request.user
+        is_staff = user.is_authenticated and getattr(user, 'is_staff', False)
+        moderation_status = params.get('moderation_status')
+        if is_staff:
+            if moderation_status in dict(Property.MODERATION_STATUS_CHOICES):
+                qs = qs.filter(moderation_status=moderation_status)
+        else:
+            qs = qs.filter(moderation_status='approved')
+
+        property_for = (params.get('property_for') or '').strip().lower()
+        if property_for in dict(Property.PROPERTY_FOR_CHOICES):
+            qs = qs.filter(property_for=property_for)
+
+        search = (params.get('search') or '').strip()
+        if search:
+            search_terms = [term.strip() for term in search.split() if term.strip()]
+            for term in search_terms:
+                type_ids = list(
+                    PropertyType.objects.filter(name__icontains=term).values_list('id', flat=True)[:50]
+                )
+                state_ids = list(
+                    State.objects.filter(name__icontains=term).values_list('id', flat=True)[:50]
+                )
+                district_ids = list(
+                    District.objects.filter(name__icontains=term).values_list('id', flat=True)[:50]
+                )
+                city_ids = list(
+                    City.objects.filter(name__icontains=term).values_list('id', flat=True)[:50]
+                )
+                term_query = (
+                    Q(title__icontains=term)
+                    | Q(contact_name__icontains=term)
+                )
+                if type_ids:
+                    term_query |= Q(property_type_id__in=type_ids)
+                if state_ids:
+                    term_query |= Q(state_id__in=state_ids)
+                if district_ids:
+                    term_query |= Q(district_id__in=district_ids)
+                if city_ids:
+                    term_query |= Q(city_id__in=city_ids)
+                qs = qs.filter(term_query)
+
+        # Property table only — no JOINs for sort/page.
+        qs = qs.order_by('-created_at')
+        offset = (page - 1) * page_size
+        # Fetch one extra row instead of COUNT(*) (often several seconds on Azure).
+        id_page = list(qs.values_list('pk', flat=True)[offset:offset + page_size + 1])
+        has_next = len(id_page) > page_size
+        pks = id_page[:page_size]
+        # Soft count: enough for Prev/Next and growing totalPages in admin UI.
+        soft_count = offset + len(pks) + (page_size if has_next else 0)
+
+        if not pks:
+            serializer = self.get_serializer([], many=True)
+            return Response({
+                'count': soft_count if page > 1 else 0,
+                'next': None,
+                'previous': None,
+                'results': serializer.data,
+            })
+
+        order = Case(*[When(pk=pk, then=i) for i, pk in enumerate(pks)])
+        page_qs = (
+            Property.objects.filter(pk__in=pks)
+            .select_related('state', 'district', 'city', 'property_type')
+            .prefetch_related(self._list_image_prefetch(pks))
+            .order_by(order)
+        )
+        serializer = self.get_serializer(page_qs, many=True)
+
+        base_url = request.build_absolute_uri(request.path)
+
+        def page_url(p):
+            q = {'page': p, 'page_size': page_size, 'search_mode': 'admin'}
+            if search:
+                q['search'] = search
+            if property_for:
+                q['property_for'] = property_for
+            if moderation_status:
+                q['moderation_status'] = moderation_status
+            return f"{base_url}?{urlencode(q)}"
+
+        return Response({
+            'count': soft_count,
+            'next': page_url(page + 1) if has_next else None,
+            'previous': page_url(page - 1) if page > 1 else None,
+            'results': serializer.data,
+        })
+
     def list(self, request, *args, **kwargs):
         """
         Paginate with a fast ORDER BY on `properties_property` only, then reload that page
         with select_related + prefetch_related. A single JOIN+ORDER BY+LIMIT on Azure MySQL
         was taking several seconds; PK lookup + joins for ~10 rows is ~0.1s.
         """
+        if self._is_admin_fast_list(request):
+            return self._admin_fast_list(request)
+
         queryset = self.filter_queryset(self.get_queryset())
         queryset = queryset.prefetch_related(None)
         page = self.paginate_queryset(queryset)
