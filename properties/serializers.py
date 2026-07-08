@@ -212,7 +212,7 @@ class PropertyListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Property
         fields = [
-            'id', 'property_for', 'contact_name',
+            'id', 'property_for', 'property_ownership', 'contact_name',
             'whatsapp_number', 'phone_number', 'email',
             'location',
             'title', 'price', 'property_type_details', 'bedrooms',
