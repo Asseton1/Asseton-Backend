@@ -643,26 +643,42 @@ class PropertyViewSet(viewsets.ModelViewSet):
         if search:
             search_terms = [term.strip() for term in search.split() if term.strip()]
             if search_terms:
+                # Admin property list can pass search_mode=admin for a faster path:
+                # title/contact/location/type only — no description scan or features M2M DISTINCT.
+                # Default (public listing) keeps the full search behavior unchanged.
+                search_mode = (params.get('search_mode') or '').strip().lower()
+                lite_search = search_mode in ('admin', 'lite')
+
                 combined_query = Q()
                 for term in search_terms:
-                    # Note: nearby_places is JSONField; icontains is not supported, so it's excluded from search
-                    term_query = (
-                        Q(title__icontains=term)
-                        | Q(description__icontains=term)
-                        | Q(property_type__name__icontains=term)
-                        | Q(contact_name__icontains=term)
-                        | Q(features__name__icontains=term)
-                        | Q(state__name__icontains=term)
-                        | Q(district__name__icontains=term)
-                        | Q(city__name__icontains=term)
-                        | Q(property_for__icontains=term)
-                        | Q(property_ownership__icontains=term)
-                        | Q(furnishing__icontains=term)
-                        | Q(price__icontains=term)
-                    )
+                    if lite_search:
+                        term_query = (
+                            Q(title__icontains=term)
+                            | Q(contact_name__icontains=term)
+                            | Q(property_type__name__icontains=term)
+                            | Q(state__name__icontains=term)
+                            | Q(district__name__icontains=term)
+                            | Q(city__name__icontains=term)
+                        )
+                    else:
+                        # Note: nearby_places is JSONField; icontains is not supported, so it's excluded from search
+                        term_query = (
+                            Q(title__icontains=term)
+                            | Q(description__icontains=term)
+                            | Q(property_type__name__icontains=term)
+                            | Q(contact_name__icontains=term)
+                            | Q(features__name__icontains=term)
+                            | Q(state__name__icontains=term)
+                            | Q(district__name__icontains=term)
+                            | Q(city__name__icontains=term)
+                            | Q(property_for__icontains=term)
+                            | Q(property_ownership__icontains=term)
+                            | Q(furnishing__icontains=term)
+                            | Q(price__icontains=term)
+                        )
+                        search_needs_distinct = True
                     combined_query &= term_query if combined_query else term_query
                 queryset = queryset.filter(combined_query)
-                search_needs_distinct = True
 
         # Latitude/Longitude filtering
         lat_min_value = convert_decimal(lat_min)
