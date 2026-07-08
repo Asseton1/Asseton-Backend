@@ -4,8 +4,11 @@ from decimal import Decimal, InvalidOperation
 import math
 from urllib.parse import urlencode
 
+from collections import defaultdict
+
+from django.core.cache import cache
 from django.db import IntegrityError
-from django.db.models import Q, Case, When
+from django.db.models import Q, Case, When, Prefetch, Min
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from rest_framework import serializers, viewsets, permissions, mixins, status
@@ -30,6 +33,7 @@ from .serializers import (
     FeatureSerializer,
     PropertyTypeSerializer,
     PropertySerializer,
+    PropertyListSerializer,
     PropertyImageSerializer,
     StateSerializer,
     DistrictSerializer,
@@ -40,7 +44,11 @@ from .serializers import (
     SiteSettingsSerializer,
     PropertyLocationSerializer,
 )
-from .utils import haversine_km
+from .utils import (
+    haversine_km,
+    locations_cache_key,
+    LOCATIONS_CACHE_TTL,
+)
 
 class StateViewSet(viewsets.ModelViewSet):
     """
@@ -173,6 +181,28 @@ class PropertyViewSet(viewsets.ModelViewSet):
             permission_classes = [permissions.IsAuthenticated]
         return [permission() for permission in permission_classes]
 
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return PropertyListSerializer
+        return PropertySerializer
+
+    def _list_image_prefetch(self, pks):
+        """
+        Prefetch only the first image per property for list cards.
+        (Django Prefetch forbids sliced querysets, so resolve first image ids explicitly.)
+        Features are omitted — not on PropertyListSerializer.
+        """
+        first_image_ids = list(
+            PropertyImage.objects.filter(property_id__in=pks)
+            .values('property_id')
+            .annotate(min_id=Min('id'))
+            .values_list('min_id', flat=True)
+        )
+        return Prefetch(
+            'images',
+            queryset=PropertyImage.objects.filter(id__in=first_image_ids).order_by('id'),
+        )
+
     def list(self, request, *args, **kwargs):
         """
         Paginate with a fast ORDER BY on `properties_property` only, then reload that page
@@ -191,7 +221,7 @@ class PropertyViewSet(viewsets.ModelViewSet):
             page_qs = (
                 Property.objects.filter(pk__in=pks)
                 .select_related('state', 'district', 'city', 'property_type')
-                .prefetch_related('images', 'features')
+                .prefetch_related(self._list_image_prefetch(pks))
                 .order_by(order)
             )
             serializer = self.get_serializer(page_qs, many=True)
@@ -204,7 +234,7 @@ class PropertyViewSet(viewsets.ModelViewSet):
         full_qs = (
             Property.objects.filter(pk__in=pks)
             .select_related('state', 'district', 'city', 'property_type')
-            .prefetch_related('images', 'features')
+            .prefetch_related(self._list_image_prefetch(pks))
             .order_by(order)
         )
         serializer = self.get_serializer(full_qs, many=True)
@@ -276,80 +306,100 @@ class PropertyViewSet(viewsets.ModelViewSet):
         coordinates are shown. Ordered by most recently added first.
         Query params: page, page_size, search, property_for (optional: 'rent' or 'sell')
         """
-        from collections import defaultdict
-
         site_settings = SiteSettings.get_settings()
         filter_radius_km = float(site_settings.filter_radius)
 
-        locations_qs = Property.objects.filter(
-            latitude__isnull=False,
-            longitude__isnull=False,
+        include_unapproved = (
+            request.user.is_authenticated and getattr(request.user, 'is_staff', False)
         )
-        if not (request.user.is_authenticated and request.user.is_staff):
-            locations_qs = locations_qs.filter(moderation_status='approved')
-
-        queryset = (
-            locations_qs.select_related('state', 'district', 'city')
-            .order_by('-created_at')
-        )
-
-        # Filter by property type: rent or sell
         property_for = (request.query_params.get('property_for') or '').strip().lower()
-        if property_for in dict(Property.PROPERTY_FOR_CHOICES):
-            queryset = queryset.filter(property_for=property_for)
-
+        if property_for not in dict(Property.PROPERTY_FOR_CHOICES):
+            property_for = ''
         search = (request.query_params.get('search') or '').strip()
-        if search:
-            queryset = queryset.filter(
-                Q(state__name__icontains=search)
-                | Q(district__name__icontains=search)
-                | Q(city__name__icontains=search)
+
+        cache_key = locations_cache_key(
+            include_unapproved, property_for, search, filter_radius_km
+        )
+        results = cache.get(cache_key)
+
+        if results is None:
+            locations_qs = Property.objects.filter(
+                latitude__isnull=False,
+                longitude__isnull=False,
+            )
+            if not include_unapproved:
+                locations_qs = locations_qs.filter(moderation_status='approved')
+            if property_for:
+                locations_qs = locations_qs.filter(property_for=property_for)
+            if search:
+                locations_qs = locations_qs.filter(
+                    Q(state__name__icontains=search)
+                    | Q(district__name__icontains=search)
+                    | Q(city__name__icontains=search)
+                )
+
+            # Lean values() fetch — avoids full ORM hydration for every property.
+            rows = list(
+                locations_qs.order_by('-created_at').values(
+                    'state_id',
+                    'district_id',
+                    'city_id',
+                    'latitude',
+                    'longitude',
+                    'created_at',
+                    'state__name',
+                    'district__name',
+                    'city__name',
+                )
             )
 
-        # Group by location name (state_id, district_id, city_id)
-        groups = defaultdict(list)
-        for prop in queryset:
-            key = (prop.state_id, prop.district_id, prop.city_id)
-            groups[key].append(prop)
+            groups = defaultdict(list)
+            for row in rows:
+                key = (row['state_id'], row['district_id'], row['city_id'])
+                groups[key].append(row)
 
-        # Cluster within each group by distance; representative = first (newest) in cluster
-        results = []
-        for key, props in groups.items():
-            # props already sorted by -created_at
-            clusters = []  # list of {"rep": property, "members": [...]}
-            for prop in props:
-                lat1 = prop.latitude
-                lon1 = prop.longitude
-                found = False
+            results = []
+            for _key, props in groups.items():
+                # props already sorted by -created_at from queryset order
+                clusters = []
+                for prop in props:
+                    lat1 = prop['latitude']
+                    lon1 = prop['longitude']
+                    found = False
+                    for cluster in clusters:
+                        rep = cluster['rep']
+                        dist_km = haversine_km(
+                            lat1, lon1, rep['latitude'], rep['longitude']
+                        )
+                        if dist_km <= filter_radius_km:
+                            cluster['members'].append(prop)
+                            found = True
+                            break
+                    if not found:
+                        clusters.append({'rep': prop, 'members': [prop]})
+
                 for cluster in clusters:
-                    rep = cluster["rep"]
-                    dist_km = haversine_km(lat1, lon1, rep.latitude, rep.longitude)
-                    if dist_km <= filter_radius_km:
-                        cluster["members"].append(prop)
-                        found = True
-                        break
-                if not found:
-                    clusters.append({"rep": prop, "members": [prop]})
+                    rep = cluster['rep']
+                    city_name = rep['city__name'] or ''
+                    district_name = rep['district__name'] or ''
+                    state_name = rep['state__name'] or ''
+                    results.append({
+                        'location_name': f"{city_name}, {district_name}, {state_name}",
+                        'latitude': rep['latitude'],
+                        'longitude': rep['longitude'],
+                        'state': state_name,
+                        'district': district_name,
+                        'city': city_name,
+                        '_created_at': rep['created_at'],
+                    })
 
-            for cluster in clusters:
-                rep = cluster["rep"]
-                location_name = f"{rep.city.name}, {rep.district.name}, {rep.state.name}"
-                results.append({
-                    "location_name": location_name,
-                    "latitude": rep.latitude,
-                    "longitude": rep.longitude,
-                    "state": rep.state.name,
-                    "district": rep.district.name,
-                    "city": rep.city.name,
-                    "_created_at": rep.created_at,
-                })
+            results.sort(key=lambda x: x['_created_at'], reverse=True)
+            for r in results:
+                del r['_created_at']
 
-        # Sort by representative's created_at descending (newest first)
-        results.sort(key=lambda x: x["_created_at"], reverse=True)
-        for r in results:
-            del r["_created_at"]
+            cache.set(cache_key, results, timeout=LOCATIONS_CACHE_TTL)
 
-        # Pagination
+        # Pagination (applied after clustering; same response shape as before)
         try:
             page_size = int(request.query_params.get('page_size', PropertyPagination.page_size))
         except (TypeError, ValueError):
@@ -366,6 +416,7 @@ class PropertyViewSet(viewsets.ModelViewSet):
 
         serializer = PropertyLocationSerializer(page_results, many=True)
         base_url = request.build_absolute_uri(request.path)
+
         def pagination_url(p):
             params = {'page': p, 'page_size': page_size}
             if search:
@@ -373,6 +424,7 @@ class PropertyViewSet(viewsets.ModelViewSet):
             if property_for:
                 params['property_for'] = property_for
             return f"{base_url}?{urlencode(params)}"
+
         next_url = None if end >= count else pagination_url(page + 1)
         prev_url = None if page <= 1 else pagination_url(page - 1)
 
