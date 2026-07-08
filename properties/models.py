@@ -81,8 +81,8 @@ class Property(models.Model):
     property_type = models.ForeignKey(PropertyType, on_delete=models.CASCADE, related_name='properties')
     
     # Location Coordinates
-    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
-    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, db_index=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, db_index=True)
     
     # Property Details
     bedrooms = models.PositiveIntegerField()
@@ -111,9 +111,18 @@ class Property(models.Model):
     is_featured = models.BooleanField(default=False, db_index=True)
     
     # Timestamps
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
+    class Meta:
+        indexes = [
+            # Speeds default public list / locations: approved + newest first
+            models.Index(
+                fields=['moderation_status', '-created_at'],
+                name='prop_mod_created_idx',
+            ),
+        ]
+
     def __str__(self):
         return self.title
         
