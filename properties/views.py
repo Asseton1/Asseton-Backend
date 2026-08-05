@@ -214,7 +214,7 @@ class PropertyViewSet(viewsets.ModelViewSet):
 
         Avoids JOIN+ORDER BY+COUNT that Azure MySQL turns into multi-second plans:
         - Location/type name matches resolved via small ID lookups, then OR on FK ids
-        - Pagination uses values_list(pk) + page_size+1 (no exact COUNT(*))
+        - Pagination uses values_list(pk) + page_size+1 for next-page detection
         - Response shape stays DRF-compatible: count/next/previous/results
         """
         params = request.query_params
@@ -274,19 +274,18 @@ class PropertyViewSet(viewsets.ModelViewSet):
                 qs = qs.filter(term_query)
 
         # Property table only — no JOINs for sort/page.
+        total_count = qs.count()
         qs = qs.order_by('-created_at')
         offset = (page - 1) * page_size
-        # Fetch one extra row instead of COUNT(*) (often several seconds on Azure).
+        # Fetch one extra row instead of COUNT for pagination (has_next only).
         id_page = list(qs.values_list('pk', flat=True)[offset:offset + page_size + 1])
         has_next = len(id_page) > page_size
         pks = id_page[:page_size]
-        # Soft count: enough for Prev/Next and growing totalPages in admin UI.
-        soft_count = offset + len(pks) + (page_size if has_next else 0)
 
         if not pks:
             serializer = self.get_serializer([], many=True)
             return Response({
-                'count': soft_count if page > 1 else 0,
+                'count': total_count,
                 'next': None,
                 'previous': None,
                 'results': serializer.data,
@@ -314,7 +313,7 @@ class PropertyViewSet(viewsets.ModelViewSet):
             return f"{base_url}?{urlencode(q)}"
 
         return Response({
-            'count': soft_count,
+            'count': total_count,
             'next': page_url(page + 1) if has_next else None,
             'previous': page_url(page - 1) if page > 1 else None,
             'results': serializer.data,
